@@ -1,0 +1,43 @@
+# =========================
+# Environment Variables
+# =========================
+.env
+.env.example
+# =========================
+# Python & Environment
+# =========================
+.venv/
+__pycache__/
+*.pyc
+*$py.class
+
+# =========================
+# Databases & Local Data
+# =========================
+*.db
+*.sqlite3
+data/satarka.db
+
+
+#models/
+# =========================
+# Frontend / Node.js
+# =========================
+frontend/node_modules/
+frontend/dist/
+# =========================
+# Testing
+# =========================
+.pytest_cache/
+
+# =========================
+# IDEs & Editors
+# =========================
+.idea/
+.vscode/
+
+# =========================
+# Machine Learning Models
+# =========================
+*.joblib
+models/health_claim_model.joblib

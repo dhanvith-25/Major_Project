@@ -1,0 +1,64 @@
+import { useState } from "react";
+
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:8081";
+
+async function api(path, options) {
+  const response = await fetch(`${API}${path}`, options);
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.detail || "Request failed");
+  return body;
+}
+
+export default function App() {
+  const [claim, setClaim] = useState("");
+  const [result, setResult] = useState(null);
+  const [webQuery, setWebQuery] = useState("");
+  const [webResult, setWebResult] = useState(null);
+  const [webLoading, setWebLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function predict(event) {
+    event.preventDefault();
+    if (claim.trim().length < 2) return setError("Enter at least two characters.");
+    setLoading(true); setError("");
+    try { setResult(await api("/health/predict", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ claim }) })); }
+    catch (err) { setError(err.message); }
+    finally { setLoading(false); }
+  }
+
+  async function verifyWithSources(event) {
+    event.preventDefault();
+    if (webQuery.trim().length < 2) return setError("Enter a question or claim to verify.");
+    setWebLoading(true); setError(""); setWebResult(null);
+    try { setWebResult(await api("/query", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: webQuery }) })); }
+    catch (err) { setError(err.message); }
+    finally { setWebLoading(false); }
+  }
+
+  return <div className="shell">
+    <header className="topbar"><div className="brand"><span className="brandMark">S</span><div><strong>satarka</strong><small>health intelligence</small></div></div><span className="prototype">RESEARCH PROTOTYPE</span></header>
+    <main>
+      <section className="hero"><p className="eyebrow">CLAIM VERIFICATION</p><h1>Is this health information<br /><em>supported by the model?</em></h1><p className="intro">Write one health claim and the classifier will return a prediction, confidence, and the full probability breakdown.</p></section>
+      <section className="workspace">
+        <div className="panel inputPanel">
+          <div className="panelTitle"><span className="step">01</span><div><h2>Choose or write a claim</h2><p>Start with a dataset example or enter text below.</p></div></div>
+          <label htmlFor="claim">Health claim</label>
+          <textarea id="claim" value={claim} onChange={(event) => { setClaim(event.target.value); setResult(null); }} placeholder="Example: Antibiotics cure the common cold" />
+          <button className="primary" onClick={predict} disabled={loading}>{loading ? "Analyzing claim…" : "Predict claim"}<span>→</span></button>
+          {error && <p className="error">{error}</p>}
+        </div>
+        <div className="panel resultPanel">
+          <div className="panelTitle"><span className="step">02</span><div><h2>Prediction result</h2><p>The model's classification for this claim.</p></div></div>
+          {!result ? <div className="empty"><div className="emptyIcon">✦</div><p>Your result will appear here</p><small>Submit a claim to see its classification.</small></div> : <div className="prediction"><div className={`verdict ${result.verdict}`}><span className="dot" />{result.verdict}</div><div className="confidence"><div><span>Confidence</span><strong>{result.confidence}%</strong></div><div className="meter"><i style={{ width: `${result.confidence}%` }} /></div></div><div className="probabilities"><span>Probability breakdown</span>{Object.entries(result.probabilities).map(([label, value]) => <div className="prob" key={label}><b className={label}>{label}</b><div className="bar"><i className={label} style={{ width: `${value}%` }} /></div><strong>{value}%</strong></div>)}</div><p className="modelNote">{result.warning}</p></div>}
+        </div>
+      </section>
+      <section className="webPanel">
+        <div className="panelTitle"><span className="step">03</span><div><h2>Verify with live web sources</h2><p>The LLM searches the web, compares evidence, and returns cited sources.</p></div></div>
+        <form className="webForm" onSubmit={verifyWithSources}><input value={webQuery} onChange={(event) => setWebQuery(event.target.value)} placeholder="Example: Do antibiotics cure the common cold?" /><button className="primary" type="submit" disabled={webLoading}>{webLoading ? "Searching sources…" : "Verify with sources"}<span>↗</span></button></form>
+        {webResult && <div className="webResult"><div className={`verdict ${webResult.verdict}`}>{webResult.verdict}</div><p className="answer">{webResult.answer}</p><div className="webMeta"><span>Validation score <strong>{webResult.validation_score ?? "—"}</strong></span><span>{webResult.validation_status}</span></div><p className="reason">{webResult.validation_reason}</p>{webResult.sources?.length > 0 && <div className="sources"><h3>Sources</h3>{webResult.sources.map((source, index) => <a href={source.url} target="_blank" rel="noreferrer" key={`${source.url}-${index}`}><strong>{source.title || source.url}</strong><small>{source.url}</small></a>)}</div>}</div>}
+      </section>
+      <footer><span>100 synthetic training examples</span><span>TF-IDF + Logistic Regression</span><span>Not medical advice</span></footer>
+    </main>
+  </div>;
+}

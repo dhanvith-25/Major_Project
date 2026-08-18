@@ -1,0 +1,101 @@
+id,claim,label
+1,Regular physical activity provides health benefits,SUPPORTED
+2,Is it true that regular physical activity provides health benefits?,SUPPORTED
+3,A health post says that regular physical activity provides health benefits.,SUPPORTED
+4,Please verify this health claim: regular physical activity provides health benefits.,SUPPORTED
+5,,SUPPORTED
+6,Is it true that vaccination can reduce the risk of severe infectious disease?,SUPPORTED
+7,A health post says that vaccination can reduce the risk of severe infectious disease.,SUPPORTED
+8,Please verify this health claim: vaccination can reduce the risk of severe infectious disease.,SUPPORTED
+9,Antibiotics treat bacterial infections when prescribed appropriately,SUPPORTED
+10,Is it true that antibiotics treat bacterial infections when prescribed appropriately?,SUPPORTED
+11,A health post says that antibiotics treat bacterial infections when prescribed appropriately.,SUPPORTED
+12,Please verify this health claim: antibiotics treat bacterial infections when prescribed appropriately.,SUPPORTED
+13,Handwashing helps reduce the spread of infections,SUPPORTED
+14,Is it true that handwashing helps reduce the spread of infections?,SUPPORTED
+15,A health post says that handwashing helps reduce the spread of infections.,SUPPORTED
+16,Please verify this health claim: handwashing helps reduce the spread of infections.,SUPPORTED
+17,Sleep supports physical and mental health,SUPPORTED
+18,Is it true that sleep supports physical and mental health?,SUPPORTED
+19,A health post says that sleep supports physical and mental health.,SUPPORTED
+20,Please verify this health claim: sleep supports physical and mental health.,SUPPORTED
+21,Smoking increases the risk of serious disease,SUPPORTED
+22,Is it true that smoking increases the risk of serious disease?,SUPPORTED
+23,A health post says that smoking increases the risk of serious disease.,SUPPORTED
+24,Please verify this health claim: smoking increases the risk of serious disease.,SUPPORTED
+25,Sunscreen helps protect skin from ultraviolet radiation,SUPPORTED
+26,Is it true that sunscreen helps protect skin from ultraviolet radiation?,SUPPORTED
+27,A health post says that sunscreen helps protect skin from ultraviolet radiation.,SUPPORTED
+28,Please verify this health claim: sunscreen helps protect skin from ultraviolet radiation.,SUPPORTED
+29,Oral rehydration can help replace fluids during diarrheal illness,SUPPORTED
+30,Is it true that oral rehydration can help replace fluids during diarrheal illness?,SUPPORTED
+31,A health post says that oral rehydration can help replace fluids during diarrheal illness.,SUPPORTED
+32,Please verify this health claim: oral rehydration can help replace fluids during diarrheal illness.,SUPPORTED
+33,Antibiotics cure the common cold,CONTRADICTED
+34,Is it true that antibiotics cure the common cold?,CONTRADICTED
+35,A health post says that antibiotics cure the common cold.,CONTRADICTED
+36,Please verify this health claim: antibiotics cure the common cold.,CONTRADICTED
+37,Drinking hot water kills every virus inside the body,CONTRADICTED
+38,Is it true that drinking hot water kills every virus inside the body?,CONTRADICTED
+39,A health post says that drinking hot water kills every virus inside the body.,CONTRADICTED
+40,Please verify this health claim: drinking hot water kills every virus inside the body.,CONTRADICTED
+41,Garlic prevents all infections,CONTRADICTED
+42,Is it true that garlic prevents all infections?,CONTRADICTED
+43,A health post says that garlic prevents all infections.,CONTRADICTED
+44,Please verify this health claim: garlic prevents all infections.,CONTRADICTED
+45,A detox drink removes every toxin from the body,CONTRADICTED
+46,Is it true that a detox drink removes every toxin from the body?,CONTRADICTED
+47,A health post says that a detox drink removes every toxin from the body.,CONTRADICTED
+48,Please verify this health claim: a detox drink removes every toxin from the body.,CONTRADICTED
+49,One vitamin guarantees that a person will never get sick,CONTRADICTED
+50,Is it true that one vitamin guarantees that a person will never get sick?,CONTRADICTED
+51,A health post says that one vitamin guarantees that a person will never get sick.,CONTRADICTED
+52,Please verify this health claim: one vitamin guarantees that a person will never get sick.,CONTRADICTED
+53,Home remedies can replace all cancer treatment,CONTRADICTED
+54,Is it true that home remedies can replace all cancer treatment?,CONTRADICTED
+55,A health post says that home remedies can replace all cancer treatment.,CONTRADICTED
+56,Please verify this health claim: home remedies can replace all cancer treatment.,CONTRADICTED
+57,A vaccine gives complete lifelong protection to every person,CONTRADICTED
+58,Is it true that a vaccine gives complete lifelong protection to every person?,CONTRADICTED
+59,A health post says that a vaccine gives complete lifelong protection to every person.,CONTRADICTED
+60,Please verify this health claim: a vaccine gives complete lifelong protection to every person.,CONTRADICTED
+61,A positive blood type determines a person's personality,CONTRADICTED
+62,Is it true that a positive blood type determines a person's personality?,CONTRADICTED
+63,A health post says that a positive blood type determines a person's personality.,CONTRADICTED
+64,Please verify this health claim: a positive blood type determines a person's personality.,CONTRADICTED
+65,This supplement will definitely cure my condition,UNCERTAIN
+66,Is it true that this supplement will definitely cure my condition?,UNCERTAIN
+67,A health post says that this supplement will definitely cure my condition.,UNCERTAIN
+68,Please verify this health claim: this supplement will definitely cure my condition.,UNCERTAIN
+69,A food is safe for every person with an allergy,UNCERTAIN
+70,Is it true that a food is safe for every person with an allergy?,UNCERTAIN
+71,A health post says that a food is safe for every person with an allergy.,UNCERTAIN
+72,Please verify this health claim: a food is safe for every person with an allergy.,UNCERTAIN
+73,This symptom always means a specific disease,UNCERTAIN
+74,Is it true that this symptom always means a specific disease?,UNCERTAIN
+75,A health post says that this symptom always means a specific disease.,UNCERTAIN
+76,Please verify this health claim: this symptom always means a specific disease.,UNCERTAIN
+77,A medicine is safe for everyone without medical advice,UNCERTAIN
+78,Is it true that a medicine is safe for everyone without medical advice?,UNCERTAIN
+79,A health post says that a medicine is safe for everyone without medical advice.,UNCERTAIN
+80,Please verify this health claim: a medicine is safe for everyone without medical advice.,UNCERTAIN
+81,More of a supplement is always better for health,UNCERTAIN
+82,Is it true that more of a supplement is always better for health?,UNCERTAIN
+83,A health post says that more of a supplement is always better for health.,UNCERTAIN
+84,Please verify this health claim: more of a supplement is always better for health.,UNCERTAIN
+85,A single test can diagnose every possible illness,UNCERTAIN
+86,Is it true that a single test can diagnose every possible illness?,UNCERTAIN
+87,A health post says that a single test can diagnose every possible illness.,UNCERTAIN
+88,Please verify this health claim: a single test can diagnose every possible illness.,UNCERTAIN
+89,This diet works exactly the same for every person,UNCERTAIN
+90,Is it true that this diet works exactly the same for every person?,UNCERTAIN
+91,A health post says that this diet works exactly the same for every person.,UNCERTAIN
+92,Please verify this health claim: this diet works exactly the same for every person.,UNCERTAIN
+93,A social-media post is enough evidence to change treatment,UNCERTAIN
+94,Is it true that a social-media post is enough evidence to change treatment?,UNCERTAIN
+95,A health post says that a social-media post is enough evidence to change treatment.,UNCERTAIN
+96,Please verify this health claim: a social-media post is enough evidence to change treatment.,UNCERTAIN
+97,Routine blood pressure checks can help identify high blood pressure,SUPPORTED
+98,Is it true that routine blood pressure checks can help identify high blood pressure?,SUPPORTED
+99,A health post says that routine blood pressure checks can help identify high blood pressure.,SUPPORTED
+100,Please verify this health claim: routine blood pressure checks can help identify high blood pressure.,SUPPORTED

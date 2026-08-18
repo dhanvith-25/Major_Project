@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Health Claim Checker</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, system-ui, sans-serif; }
+    body { margin: 0; background: #f3f7fb; color: #172033; }
+    main { width: min(760px, calc(100% - 32px)); margin: 48px auto; }
+    .card { background: white; border: 1px solid #dce5ef; border-radius: 18px; padding: 28px; box-shadow: 0 12px 35px #1b4b6d12; }
+    h1 { margin: 0 0 8px; color: #126782; } p { color: #526174; }
+    textarea { width: 100%; min-height: 125px; box-sizing: border-box; border: 1px solid #c6d4e2; border-radius: 12px; padding: 14px; font: inherit; resize: vertical; }
+    button { margin-top: 14px; border: 0; border-radius: 10px; padding: 12px 18px; color: white; background: #126782; cursor: pointer; font-weight: 700; }
+    button:disabled { opacity: .6; cursor: wait; }
+    .status { display: flex; gap: 20px; flex-wrap: wrap; font-size: 14px; margin: 18px 0; }
+    .result { display: none; margin-top: 22px; padding: 20px; border-radius: 12px; background: #eef7fa; }
+    .result.show { display: block; } .verdict { font-size: 25px; font-weight: 800; }
+    .SUPPORTED { color: #087443; } .CONTRADICTED { color: #b3261e; } .UNCERTAIN { color: #9b6500; } .INVALID_STATEMENT { color: #667085; }
+    .warning { font-size: 13px; margin-top: 18px; }
+    code { background: #eef2f6; padding: 2px 5px; border-radius: 5px; }
+    .upload { margin-top: 30px; padding-top: 22px; border-top: 1px solid #e1e8ef; }
+    table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid #e2e8ef; }
+    th { color: #526174; }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="card">
+      <h1>AI Health Claim Checker</h1>
+      <p>Enter a general health claim to classify it as supported, contradicted, or uncertain.</p>
+      <div class="status"><span>API: <strong id="apiStatus">checking…</strong></span><span>Model: <strong>TF-IDF + Logistic Regression</strong></span></div>
+      <form id="claimForm">
+        <textarea id="claim" minlength="2" maxlength="5000" required placeholder="Example: Antibiotics cure the common cold"></textarea>
+        <button id="checkButton" type="submit">Check claim</button>
+      </form>
+      <div id="result" class="result" aria-live="polite">
+        <div id="verdict" class="verdict"></div>
+        <p>Confidence: <strong id="confidence"></strong></p>
+        <pre id="probabilities"></pre>
+      </div>
+      <p class="warning"><strong>Important:</strong> This is a synthetic research prototype, not medical advice or a diagnosis. Verify health information with a qualified professional.</p>
+      <div class="upload">
+        <h2>Check a CSV dataset</h2>
+        <p>Upload a CSV with a <code>claim</code>, <code>text</code>, or <code>query</code> column. An optional <code>label</code> column enables accuracy scoring.</p>
+        <input id="datasetFile" type="file" accept=".csv,text/csv">
+        <button id="uploadButton" type="button">Upload and classify</button>
+        <div id="datasetResult" class="result" aria-live="polite"></div>
+      </div>
+    </section>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    async function checkApi() {
+      try { const response = await fetch('/api/status'); $('apiStatus').textContent = response.ok ? 'online' : 'error'; }
+      catch (_) { $('apiStatus').textContent = 'offline'; }
+    }
+    $('claimForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const button = $('checkButton'); button.disabled = true; button.textContent = 'Checking…';
+      try {
+        const response = await fetch('/health/predict', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({claim: $('claim').value}) });
+        const data = await response.json(); if (!response.ok) throw new Error(data.detail || 'Request failed');
+        $('result').className = 'result show'; $('verdict').className = 'verdict ' + data.verdict; $('verdict').textContent = data.verdict;
+        $('confidence').textContent = data.confidence + '%'; $('probabilities').textContent = JSON.stringify(data.probabilities, null, 2);
+      } catch (error) { $('result').className = 'result show'; $('verdict').className = 'verdict UNCERTAIN'; $('verdict').textContent = error.message; }
+      finally { button.disabled = false; button.textContent = 'Check claim'; }
+    });
+    $('uploadButton').addEventListener('click', async () => {
+      const file = $('datasetFile').files[0];
+      if (!file) { $('datasetResult').className = 'result show'; $('datasetResult').textContent = 'Choose a CSV file first.'; return; }
+      const button = $('uploadButton'); button.disabled = true; button.textContent = 'Uploading…';
+      try {
+        const form = new FormData(); form.append('file', file);
+        const response = await fetch('/health/upload', {method: 'POST', body: form});
+        const data = await response.json(); if (!response.ok) throw new Error(data.detail || 'Upload failed');
+        const summary = data.summary; const accuracy = summary.accuracy === undefined ? 'No labels supplied' : summary.accuracy + '%';
+        const rows = data.results.map(item => `<tr><td>${item.row}</td><td>${item.claim}</td><td class="${item.verdict}">${item.verdict}</td><td>${item.confidence}%</td><td>${item.correct === null ? '—' : item.correct ? 'Yes' : 'No'}</td></tr>`).join('');
+        $('datasetResult').className = 'result show'; $('datasetResult').innerHTML = `<strong>${summary.rows} rows classified</strong><p>Supported: ${summary.counts.SUPPORTED} · Contradicted: ${summary.counts.CONTRADICTED} · Uncertain: ${summary.counts.UNCERTAIN}<br>Accuracy: ${accuracy}</p><table><thead><tr><th>#</th><th>Claim</th><th>Prediction</th><th>Confidence</th><th>Correct</th></tr></thead><tbody>${rows}</tbody></table>`;
+      } catch (error) { $('datasetResult').className = 'result show'; $('datasetResult').textContent = error.message; }
+      finally { button.disabled = false; button.textContent = 'Upload and classify'; }
+    });
+    checkApi();
+  </script>
+</body>
+</html>
