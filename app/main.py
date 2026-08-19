@@ -14,6 +14,7 @@ from app.services.search import search
 from app.services.validator import validate,score
 from app.training.pipeline import train_if_ready
 from app.services.health_model import predict_health_claim,predict_health_claims,train_health_model
+from app.services.evidence_reasoner import reason_about_claim
 
 @asynccontextmanager
 async def lifespan(app):
@@ -37,8 +38,8 @@ def health():
       "training":{"enabled":s.training_enabled,**training_status()}}
 
 @app.post("/health/predict")
-def health_predict(req:HealthPredictionRequest):
-    return predict_health_claim(req.claim)
+async def health_predict(req:HealthPredictionRequest):
+    return await reason_about_claim(req.claim)
 
 @app.post("/health/train")
 def health_train():

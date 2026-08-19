@@ -31,6 +31,10 @@ HEALTH_TERMS = {
 }
 
 _SEEDS = [
+    ("Drinking water is good for health", "SUPPORTED"),
+    ("Is drinking water good for health?", "SUPPORTED"),
+    ("Water is essential for normal body functions", "SUPPORTED"),
+    ("Drinking water helps the body stay hydrated", "SUPPORTED"),
     ("Regular physical activity provides health benefits", "SUPPORTED"),
     ("Vaccination can reduce the risk of severe infectious disease", "SUPPORTED"),
     ("Antibiotics treat bacterial infections when prescribed appropriately", "SUPPORTED"),
@@ -40,6 +44,8 @@ _SEEDS = [
     ("Sunscreen helps protect skin from ultraviolet radiation", "SUPPORTED"),
     ("Oral rehydration can help replace fluids during diarrheal illness", "SUPPORTED"),
     ("Antibiotics cure the common cold", "CONTRADICTED"),
+    ("Drinking hot water cures all diseases", "CONTRADICTED"),
+    ("Drinking water replaces all medical treatment", "CONTRADICTED"),
     ("Drinking hot water kills every virus inside the body", "CONTRADICTED"),
     ("Garlic prevents all infections", "CONTRADICTED"),
     ("A detox drink removes every toxin from the body", "CONTRADICTED"),
