@@ -4,7 +4,17 @@ from app.services.llm import call
 from app.config import settings
 from app.services.health_model import predict_health_claim
 AUTH={"who":100,"government":95,"peer_reviewed":95,"university":90,"medical_institution":90,"established_fact_checker":85,"major_news":75,"news":65,"blog":30,"social_media":10,"unknown":10}
-def authority(x):return AUTH.get(str(x).lower(),10)
+def authority(x):
+    source=str(x).lower().replace("-","_").replace(" ","_")
+    if "who" in source or "world_health" in source:return AUTH["who"]
+    if "government" in source or "gov" in source or "public_health" in source:return AUTH["government"]
+    if "peer_review" in source or "systematic_review" in source:return AUTH["peer_reviewed"]
+    if "university" in source or "academic" in source:return AUTH["university"]
+    if "medical" in source or "health_agency" in source or "health_website" in source:return AUTH["medical_institution"]
+    if "news" in source:return AUTH["news"]
+    if "blog" in source:return AUTH["blog"]
+    if "social" in source:return AUTH["social_media"]
+    return AUTH.get(source,AUTH["unknown"])
 def recency(d):
     if not d:return 50
     try:
@@ -23,7 +33,9 @@ def validate(q,answer,sources):
         return {"canonical_claim":q,"verdict":"INVALID_STATEMENT","answer":"The input is not a health-related statement.","evidence":[],"_health_prediction":health_prediction}
     ev="\n".join(f"SOURCE {i}\nTITLE:{s['title']}\nURL:{s['url']}\nDATE:{s.get('published_date')}\nCONTENT:{s['content'][:6000]}" for i,s in enumerate(sources,1))
     p=f"""Query:{q}\nGenerated answer:{answer}\nML health-model prediction:{health_prediction["verdict"]} ({health_prediction["confidence"]}% confidence)\nEvidence:{ev}
-Return ONLY JSON with canonical_claim, verdict (SUPPORTED|CONTRADICTED|UNCERTAIN), answer, and evidence array.
+Return ONLY JSON with canonical_claim, verdict (SUPPORTED|CONTRADICTED|UNCERTAIN), answer, explanation, and evidence array.
+The explanation must be 2-4 sentences in plain language. Explain what the evidence says,
+how it relates to the user's claim, and why that supports, contradicts, or cannot confirm the verdict.
 Each evidence item must contain url, relationship (SUPPORTS|CONTRADICTS|IRRELEVANT), relevance 0-100, source_type, published_date, reason.
 Never invent evidence and never report model confidence. Treat the ML prediction as a signal, not as proof; use only the supplied evidence for the final verdict."""
     raw,model=call("validator","You are Satarka's independent evidence validator. Use only supplied evidence.",p,1800)
@@ -43,6 +55,6 @@ def score(r):
     final=round(max(0,min(100,rel*.30+auth*.25+agreement*.20+recent*.15+independence*.10)),2)
     if sup and con: status,reason="CONFLICTING","Supporting and contradicting evidence was found."
     elif final>=settings().auto_ingest_threshold: status,reason="VERIFIED","Passed automatic verification threshold."
-    elif final>=90: status,reason="SUPPORTED","Strong evidence, below automatic ingestion threshold."
+    elif final>=75: status,reason="SUPPORTED","Evidence supports the claim, but the score is below the automatic ingestion threshold."
     else: status,reason="LOW_CONFIDENCE","Evidence is insufficient."
     return final,status,reason,{"relevance":round(rel,2),"authority":round(auth,2),"agreement":round(agreement,2),"recency":round(recent,2),"independence":round(independence,2)}

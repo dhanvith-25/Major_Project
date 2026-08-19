@@ -90,7 +90,7 @@ async def query(req:QueryRequest):
     q=req.query.strip(); hit=find_match(q)
     if hit:
         log_query(q,"verified_dataset",None,True,hit["validation_score"],"DATASET_HIT")
-        return QueryResponse(answer=hit["answer"],verdict=hit["verdict"],route="verified_dataset",dataset_hit=True,dataset_similarity=hit["similarity"],validation_score=hit["validation_score"],validation_status="VERIFIED_DATASET",validation_reason="Retrieved from Satarka verified dataset.",sources=[SourceResponse(title="Verified source",url=x["url"],published_date=x.get("published_date")) for x in hit["sources"] if x.get("url")],claim_id=hit["id"])
+        return QueryResponse(answer=hit["answer"],verdict=hit["verdict"],route="verified_dataset",dataset_hit=True,dataset_similarity=hit["similarity"],validation_score=hit["validation_score"],validation_status="VERIFIED_DATASET",validation_reason="Retrieved from Satarka verified dataset.",explanation="This result came from a previously verified claim in the project dataset.",sources=[SourceResponse(title="Verified source",url=x["url"],published_date=x.get("published_date")) for x in hit["sources"] if x.get("url")],claim_id=hit["id"])
     initial=choose_route(q); order={"cheap":["cheap","medium","premium"],"medium":["medium","premium","cheap"],"premium":["premium","medium","cheap"]}[initial]
     answer=model=None; errors=[]
     for route in order:
@@ -105,7 +105,7 @@ async def query(req:QueryRequest):
     else:search_error=None
     if not sources:
         reason="No independent evidence was retrieved; claim was not stored."+(f" Search error: {search_error}" if search_error else "")
-        return QueryResponse(answer=answer,verdict="UNCERTAIN",route=initial,model_used=model,dataset_hit=False,validation_score=0,validation_status="INSUFFICIENT_EVIDENCE",validation_reason=reason)
+        return QueryResponse(answer=answer,verdict="UNCERTAIN",route=initial,model_used=model,dataset_hit=False,validation_score=0,validation_status="INSUFFICIENT_EVIDENCE",validation_reason=reason,explanation="The system could not retrieve independent supporting sources, so it cannot safely confirm or contradict this claim.",sources=[])
     if not settings().validator_configured:raise HTTPException(502,"Validator is not configured.")
     try:r=validate(q,answer,sources); val,status,reason,components=score(r)
     except Exception as e:raise HTTPException(502,f"Evidence validation failed: {e}") from e
@@ -119,7 +119,8 @@ async def query(req:QueryRequest):
             add_training_example(cid,q,str(r.get("answer") or answer),val); queued=True
             train_if_ready(False)
     log_query(q,initial,model,False,val,status)
-    return QueryResponse(answer=str(r.get("answer") or answer),verdict=str(r.get("verdict","UNCERTAIN")),route=initial,model_used=model,dataset_hit=False,validation_score=val,validation_status=status,validation_reason=reason,validation_components=components,sources=[SourceResponse(title=s["title"],url=s["url"],published_date=s.get("published_date")) for s in sources if s.get("url")],ingested_into_dataset=ingested,queued_for_training=queued,claim_id=cid)
+    evidence=[e for e in r.get("evidence",[]) if isinstance(e,dict) and e.get("url")]
+    return QueryResponse(answer=str(r.get("answer") or answer),verdict=str(r.get("verdict","UNCERTAIN")),route=initial,model_used=model,dataset_hit=False,validation_score=val,validation_status=status,validation_reason=reason,validation_components=components,explanation=str(r.get("explanation") or reason),evidence=evidence,sources=[SourceResponse(title=s["title"],url=s["url"],published_date=s.get("published_date")) for s in sources if s.get("url")],ingested_into_dataset=ingested,queued_for_training=queued,claim_id=cid)
 
 @app.get("/dataset")
 def dataset():return list_claims()
