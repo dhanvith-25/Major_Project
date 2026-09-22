@@ -198,7 +198,10 @@ def predict_health_claims(claims: list[str]) -> list[dict[str, Any]]:
         if not text:
             continue
         if not is_health_related(text):
-            predictions.append({"claim": text, "verdict": "INVALID_STATEMENT", "confidence": 100.0, "probabilities": {}, "model": "health-domain-filter", "warning": "This statement does not appear to be health-related."})
+            predictions.append({"claim": text, "verdict": "INVALID_STATEMENT",
+                                 "confidence": 100.0, "probabilities": {},
+                                   "model": "health-domain-filter",
+                     "warning": "This statement does not appear to be health-related."})
         else:
             predictions.append(_predict_with_model(text, model))
     return predictions

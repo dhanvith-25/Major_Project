@@ -15,6 +15,8 @@ export default function App() {
   const [webQuery, setWebQuery] = useState("");
   const [webResult, setWebResult] = useState(null);
   const [webLoading, setWebLoading] = useState(false);
+  const [report, setReport] = useState(null);
+  const [reportLoading, setReportLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -34,6 +36,19 @@ export default function App() {
     try { setWebResult(await api("/query", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: webQuery }) })); }
     catch (err) { setError(err.message); }
     finally { setWebLoading(false); }
+  }
+
+  async function fetchReport() {
+    setReportLoading(true);
+    setError("");
+    try {
+      const result = await api("/report?limit=10", { method: "GET" });
+      setReport(result);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setReportLoading(false);
+    }
   }
 
   return <div className="shell">
@@ -57,6 +72,15 @@ export default function App() {
         <div className="panelTitle"><span className="step">03</span><div><h2>Verify with live web sources</h2><p>The LLM searches the web, compares evidence, and returns cited sources.</p></div></div>
         <form className="webForm" onSubmit={verifyWithSources}><input value={webQuery} onChange={(event) => setWebQuery(event.target.value)} placeholder="Example: Do antibiotics cure the common cold?" /><button className="primary" type="submit" disabled={webLoading}>{webLoading ? "Searching sources…" : "Verify with sources"}<span>↗</span></button></form>
         {webResult && <div className="webResult"><div className={`verdict ${webResult.verdict}`}><span className="dot" />{webResult.verdict}</div><section className="detailBlock"><h3>Detailed answer</h3><p className="answer">{webResult.answer || "No answer was generated."}</p></section><div className="webMeta"><span>Validation score <strong>{webResult.validation_score ?? "—"}</strong></span><span>Validation status <strong>{webResult.validation_status || "—"}</strong></span></div><section className="detailBlock explanation"><h3>Why this verdict?</h3><p>{webResult.explanation || webResult.validation_reason || "The validator did not provide an explanation."}</p><p className="reason"><strong>Reason:</strong> {webResult.validation_reason || "Not provided."}</p></section>{webResult.evidence?.length > 0 && <section className="evidence"><h3>Supporting details</h3>{webResult.evidence.map((item, index) => <article className="evidenceItem" key={`${item.url}-${index}`}><div><b className={item.relationship}>{item.relationship}</b><span>{item.relevance ?? 0}% relevance</span></div><p>{item.reason || "This source was used by the validator."}</p></article>)}</section>}{webResult.sources?.length > 0 && <div className="sources"><h3>Supporting source links</h3>{webResult.sources.map((source, index) => <a href={source.url} target="_blank" rel="noreferrer" key={`${source.url}-${index}`}><strong>{source.title || source.url}</strong><small>{source.url}</small></a>)}</div>}</div>}
+      </section>
+      <section className="webPanel">
+        <div className="panelTitle"><span className="step">04</span><div><h2>Request a query report</h2><p>Generate a summary of the recent verification queries and their verdicts.</p></div></div>
+        <button className="primary" onClick={fetchReport} disabled={reportLoading}>{reportLoading ? "Generating report…" : "Generate report"}<span>▣</span></button>
+        {report && <div className="webResult reportBox">
+          <div className="webMeta"><span>Total queries <strong>{report.total_queries}</strong></span><span>Generated <strong>{new Date(report.generated_at).toLocaleString()}</strong></span></div>
+          <section className="detailBlock"><h3>Verdict summary</h3><div className="summaryGrid">{Object.entries(report.summary || {}).map(([label, value]) => <div key={label} className="summaryItem"><strong>{label}</strong><span>{value}</span></div>)}</div></section>
+          <section className="detailBlock"><h3>Recent query history</h3>{report.queries?.slice(0, 5).map((item) => <div className="reportItem" key={item.id}><p><strong>{item.query}</strong></p><small>{item.verdict} · {item.route} · {item.status}</small><p>{item.answer || "No answer recorded."}</p></div>)}</section>
+        </div>}
       </section>
       <footer><span>---------</span><span>TF-IDF + Logistic Regression</span><span>Not medical advice</span></footer>
     </main>

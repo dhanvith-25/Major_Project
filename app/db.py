@@ -30,15 +30,43 @@ def init_db():
         CREATE TABLE IF NOT EXISTS query_log(
           id INTEGER PRIMARY KEY AUTOINCREMENT, query TEXT NOT NULL, route TEXT NOT NULL,
           model_used TEXT, dataset_hit INTEGER NOT NULL, validation_score REAL,
-          status TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL);
+          status TEXT NOT NULL, error TEXT, verdict TEXT, answer TEXT,
+          response_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL);
         """); c.commit()
+        existing_cols={row[1] for row in c.execute("PRAGMA table_info(query_log)").fetchall()}
+        for col_name, ddl in {
+            "verdict":"ALTER TABLE query_log ADD COLUMN verdict TEXT",
+            "answer":"ALTER TABLE query_log ADD COLUMN answer TEXT",
+            "response_json":"ALTER TABLE query_log ADD COLUMN response_json TEXT NOT NULL DEFAULT '{}'",
+        }.items():
+            if col_name not in existing_cols:
+                c.execute(ddl)
+        c.commit()
     finally: c.close()
 
-def log_query(q,route,model,hit,score,status,error=None):
+def log_query(q,route,model,hit,score,status,error=None,verdict=None,answer=None,response_payload=None):
+    response_payload=response_payload or {}
+    if verdict is None and isinstance(response_payload,dict):
+        verdict=response_payload.get("verdict")
+    if answer is None and isinstance(response_payload,dict):
+        answer=response_payload.get("answer")
+    full_payload={
+        "query": q,
+        "route": route,
+        "model_used": model,
+        "dataset_hit": bool(hit),
+        "validation_score": score,
+        "status": status,
+        "verdict": verdict,
+        "answer": answer,
+        "error": error,
+        "created_at": now(),
+        **response_payload,
+    }
     c=connection()
     try:
-        c.execute("INSERT INTO query_log(query,route,model_used,dataset_hit,validation_score,status,error,created_at) VALUES(?,?,?,?,?,?,?,?)",
-                  (q,route,model,int(hit),score,status,error,now())); c.commit()
+        c.execute("INSERT INTO query_log(query,route,model_used,dataset_hit,validation_score,status,error,verdict,answer,response_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                  (q,route,model,int(hit),score,status,error,(verdict or "").upper() if verdict else None,answer or "",json.dumps(full_payload),full_payload.get("created_at") or now())); c.commit()
     finally: c.close()
 
 def upsert_claim(claim,answer,verdict,score,sources,model):
@@ -90,5 +118,94 @@ def list_claims():
 
 def list_logs(limit):
     c=connection()
-    try:return [dict(r) for r in c.execute("SELECT * FROM query_log ORDER BY id DESC LIMIT ?",(limit,)).fetchall()]
+    try:
+        logs=[]
+        for row in c.execute("SELECT * FROM query_log ORDER BY id DESC LIMIT ?",(limit,)).fetchall():
+            item=dict(row)
+            raw=item.get("response_json") or "{}"
+            try: item["response_json"]=json.loads(raw)
+            except Exception: item["response_json"]={}
+            logs.append(item)
+        return logs
     finally:c.close()
+
+
+def update_query_response(log_id, q, route, model, hit, score, status, error=None, verdict=None, answer=None, response_payload=None):
+    response_payload=response_payload or {}
+    updated_at=now()
+    answer = answer or response_payload.get("answer") or ""
+    verdict = verdict or response_payload.get("verdict") or ""
+    payload = {
+        "query": q,
+        "route": route,
+        "model_used": model,
+        "dataset_hit": bool(hit),
+        "validation_score": score,
+        "status": status,
+        "verdict": verdict,
+        "answer": answer,
+        "error": error,
+        "created_at": updated_at,
+        **response_payload,
+    }
+    c=connection()
+    try:
+        c.execute("UPDATE query_log SET route=?, model_used=?, dataset_hit=?, validation_score=?, status=?, error=?, verdict=?, answer=?, response_json=?, created_at=? WHERE id=?",
+                  (route, model, int(bool(hit)), score, status, error, (verdict or "").upper() if verdict else None, answer or "", json.dumps(payload), updated_at, int(log_id)))
+        c.commit()
+    finally: c.close()
+
+
+def generate_query_report(limit=20):
+    rows=list_logs(max(1,min(int(limit),1000)))
+    summary={}
+    queries=[]
+    for row in rows:
+        payload=row.get("response_json") or {}
+        verdict=(row.get("verdict") or payload.get("verdict") or row.get("status") or "UNKNOWN").upper()
+        if not payload.get("answer") and row.get("answer"):
+            payload["answer"]=row.get("answer")
+        if not payload.get("query"):
+            payload["query"]=row.get("query")
+        if not payload.get("route"):
+            payload["route"] = row.get("route")
+        if not payload.get("model_used"):
+            payload["model_used"] = row.get("model_used")
+        if payload.get("validation_score") is None:
+            payload["validation_score"] = row.get("validation_score")
+        if payload.get("created_at") is None:
+            payload["created_at"] = row.get("created_at")
+        query_entry={
+            "id": row.get("id"),
+            "query": payload.get("query") or row.get("query"),
+            "route": payload.get("route") or row.get("route"),
+            "model_used": payload.get("model_used") or row.get("model_used"),
+            "dataset_hit": bool(row.get("dataset_hit") or payload.get("dataset_hit")),
+            "validation_score": payload.get("validation_score", row.get("validation_score")),
+            "status": payload.get("status") or row.get("status"),
+            "verdict": verdict,
+            "response": {
+                "answer": payload.get("answer") or row.get("answer") or "",
+                "verdict": payload.get("verdict") or verdict,
+                "status": payload.get("status") or row.get("status"),
+                "validation_score": payload.get("validation_score", row.get("validation_score")),
+                "validation_status": payload.get("validation_status") or payload.get("status") or row.get("status"),
+                "explanation": payload.get("explanation") or payload.get("validation_reason") or "",
+                "model_used": payload.get("model_used") or row.get("model_used"),
+                "route": payload.get("route") or row.get("route"),
+                "dataset_hit": bool(row.get("dataset_hit") or payload.get("dataset_hit")),
+                "created_at": payload.get("created_at") or row.get("created_at"),
+                "error": payload.get("error") or row.get("error"),
+                "sources": payload.get("sources") or [],
+                "evidence": payload.get("evidence") or [],
+            },
+            "answer": payload.get("answer") or row.get("answer") or "",
+            "created_at": payload.get("created_at") or row.get("created_at"),
+            "error": payload.get("error") or row.get("error"),
+            "time": payload.get("created_at") or row.get("created_at"),
+            "date": (payload.get("created_at") or row.get("created_at") or "").split("T")[0] if (payload.get("created_at") or row.get("created_at")) else "",
+        }
+        queries.append(query_entry)
+        summary[verdict]=summary.get(verdict,0)+1
+    return {"generated_at": now(), "total_queries": len(queries), "summary": dict(sorted(summary.items())), "queries": queries}
+

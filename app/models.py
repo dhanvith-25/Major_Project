@@ -20,5 +20,25 @@ class QueryResponse(BaseModel):
     explanation:Optional[str]=None
     ingested_into_dataset:bool=False
     queued_for_training:bool=False; claim_id:Optional[int]=None
+
+class QueryReportItem(BaseModel):
+    id:int
+    query:str
+    route:str
+    model_used:Optional[str]=None
+    dataset_hit:bool=False
+    validation_score:Optional[float]=None
+    status:str
+    verdict:str
+    answer:str=""
+    created_at:Optional[str]=None
+    error:Optional[str]=None
+
+class QueryReportResponse(BaseModel):
+    generated_at:str
+    total_queries:int
+    summary:dict[str,int]=Field(default_factory=dict)
+    queries:list[QueryReportItem]=Field(default_factory=list)
+
 class TrainResponse(BaseModel):
     status:str; examples:int; output_dir:Optional[str]=None; message:str

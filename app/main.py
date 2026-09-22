@@ -6,9 +6,9 @@ from fastapi import FastAPI,HTTPException,UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from app.config import settings
-from app.db import init_db,log_query,upsert_claim,add_training_example,list_claims,list_logs,training_status
+from app.db import init_db,log_query,upsert_claim,add_training_example,list_claims,list_logs,training_status,generate_query_report,update_query_response
 from app.dataset import find_match
-from app.models import HealthPredictionRequest,QueryRequest,QueryResponse,SourceResponse,TrainResponse
+from app.models import HealthPredictionRequest,QueryRequest,QueryResponse,SourceResponse,TrainResponse,QueryReportResponse
 from app.services.llm import choose_route,call
 from app.services.search import search
 from app.services.validator import validate,score
@@ -85,42 +85,103 @@ async def health_upload(file:UploadFile):
     if labeled: summary["accuracy"]=round(correct/labeled*100,2)
     return {"filename":file.filename,"claim_column":original_column,"summary":summary,"results":results}
 
-@app.post("/query",response_model=QueryResponse)
-async def query(req:QueryRequest):
-    q=req.query.strip(); hit=find_match(q)
+async def _generate_query_payload(q: str, route_hint: str | None = None):
+    q=q.strip(); hit=find_match(q)
     if hit:
-        log_query(q,"verified_dataset",None,True,hit["validation_score"],"DATASET_HIT")
-        return QueryResponse(answer=hit["answer"],verdict=hit["verdict"],route="verified_dataset",dataset_hit=True,dataset_similarity=hit["similarity"],validation_score=hit["validation_score"],validation_status="VERIFIED_DATASET",validation_reason="Retrieved from Satarka verified dataset.",explanation="This result came from a previously verified claim in the project dataset.",sources=[SourceResponse(title="Verified source",url=x["url"],published_date=x.get("published_date")) for x in hit["sources"] if x.get("url")],claim_id=hit["id"])
-    initial=choose_route(q); order={"cheap":["cheap","medium","premium"],"medium":["medium","premium","cheap"],"premium":["premium","medium","cheap"]}[initial]
+        return {
+            "query": q,
+            "answer": hit["answer"],
+            "verdict": hit["verdict"],
+            "status": "VERIFIED_DATASET",
+            "validation_score": hit["validation_score"],
+            "validation_status": "VERIFIED_DATASET",
+            "validation_reason": "Retrieved from Satarka verified dataset.",
+            "explanation": "This result came from a previously verified claim in the project dataset.",
+            "route": "verified_dataset",
+            "model_used": None,
+            "dataset_hit": True,
+            "sources": [{"title": "Verified source", "url": x["url"], "published_date": x.get("published_date")} for x in hit["sources"] if x.get("url")],
+            "created_at": None,
+        }
+    initial=route_hint or choose_route(q)
+    order={"cheap":["cheap","medium","premium"],"medium":["medium","premium","cheap"],"premium":["premium","medium","cheap"]}[initial]
     answer=model=None; errors=[]
     for route in order:
         available={"cheap":settings().cheap_configured,"medium":settings().medium_configured,"premium":settings().premium_configured}[route]
         if not available:continue
-        try:answer,model=call(route,"You are Satarka's answer generator. Do not invent sources or confidence percentages.",q); initial=route; break
+        try:
+            answer,model=call(route,"You are Satarka's answer generator. Do not invent sources or confidence percentages.",q); initial=route; break
         except Exception as e:errors.append(f"{route}: {e}")
     if not answer:
-        detail="No LLM route succeeded. "+"; ".join(errors); log_query(q,initial,None,False,None,"LLM_ERROR",detail); raise HTTPException(502,detail)
+        raise HTTPException(502,"No LLM route succeeded. "+"; ".join(errors))
     try:sources=await search(q)
     except Exception as e:sources=[]; search_error=str(e)
     else:search_error=None
     if not sources:
-        reason="No independent evidence was retrieved; claim was not stored."+(f" Search error: {search_error}" if search_error else "")
-        return QueryResponse(answer=answer,verdict="UNCERTAIN",route=initial,model_used=model,dataset_hit=False,validation_score=0,validation_status="INSUFFICIENT_EVIDENCE",validation_reason=reason,explanation="The system could not retrieve independent supporting sources, so it cannot safely confirm or contradict this claim.",sources=[])
+        return {
+            "query": q,
+            "answer": answer,
+            "verdict": "UNCERTAIN",
+            "status": "INSUFFICIENT_EVIDENCE",
+            "validation_score": 0,
+            "validation_status": "INSUFFICIENT_EVIDENCE",
+            "validation_reason": "No independent evidence was retrieved; claim was not stored."+(f" Search error: {search_error}" if search_error else ""),
+            "explanation": "The system could not retrieve independent supporting sources, so it cannot safely confirm or contradict this claim.",
+            "route": initial,
+            "model_used": model,
+            "dataset_hit": False,
+            "sources": [],
+            "created_at": None,
+        }
     if not settings().validator_configured:raise HTTPException(502,"Validator is not configured.")
     try:r=validate(q,answer,sources); val,status,reason,components=score(r)
     except Exception as e:raise HTTPException(502,f"Evidence validation failed: {e}") from e
-    ingested=queued=False; cid=None
-    if val>=settings().auto_ingest_threshold and status=="VERIFIED" and r.get("verdict") in ("SUPPORTED","CONTRADICTED"):
-        ev=[e for e in r.get("evidence",[]) if e.get("relationship") in ("SUPPORTS","CONTRADICTS")]
-        src=[{"url":e.get("url",""),"published_date":e.get("published_date"),"relationship":e.get("relationship"),"source_type":e.get("source_type","unknown")} for e in ev]
-        cid=upsert_claim(str(r.get("canonical_claim") or q),str(r.get("answer") or answer),str(r.get("verdict")),val,src,model or "")
-        ingested=True
-        if val>=settings().training_threshold:
-            add_training_example(cid,q,str(r.get("answer") or answer),val); queued=True
-            train_if_ready(False)
-    log_query(q,initial,model,False,val,status)
     evidence=[e for e in r.get("evidence",[]) if isinstance(e,dict) and e.get("url")]
-    return QueryResponse(answer=str(r.get("answer") or answer),verdict=str(r.get("verdict","UNCERTAIN")),route=initial,model_used=model,dataset_hit=False,validation_score=val,validation_status=status,validation_reason=reason,validation_components=components,explanation=str(r.get("explanation") or reason),evidence=evidence,sources=[SourceResponse(title=s["title"],url=s["url"],published_date=s.get("published_date")) for s in sources if s.get("url")],ingested_into_dataset=ingested,queued_for_training=queued,claim_id=cid)
+    payload={
+        "query": q,
+        "answer": str(r.get("answer") or answer),
+        "verdict": str(r.get("verdict","UNCERTAIN")),
+        "status": status,
+        "validation_score": val,
+        "validation_status": status,
+        "validation_reason": reason,
+        "validation_components": components,
+        "explanation": str(r.get("explanation") or reason),
+        "route": initial,
+        "model_used": model,
+        "dataset_hit": False,
+        "sources": [{"title": s.get("title") or s.get("url") or "Source", "url": s.get("url"), "published_date": s.get("published_date")} for s in sources if s.get("url")],
+        "evidence": evidence,
+        "created_at": None,
+    }
+    return payload
+
+@app.post("/query",response_model=QueryResponse)
+async def query(req:QueryRequest):
+    q=req.query.strip(); payload=await _generate_query_payload(q)
+    if payload.get("status") == "VERIFIED_DATASET":
+        response = QueryResponse(answer=payload["answer"],verdict=payload["verdict"],route=payload["route"],dataset_hit=payload.get("dataset_hit",False),dataset_similarity=None,validation_score=payload.get("validation_score"),validation_status=payload.get("validation_status","VERIFIED_DATASET"),validation_reason=payload.get("validation_reason"),explanation=payload.get("explanation"),sources=[SourceResponse(title=s["title"],url=s["url"],published_date=s.get("published_date")) for s in payload.get("sources",[]) if s.get("url")],claim_id=None)
+        log_query(q,payload["route"],payload.get("model_used"),bool(payload.get("dataset_hit",False)),payload.get("validation_score"),payload.get("status"),verdict=payload.get("verdict"),answer=payload.get("answer"),response_payload=payload)
+        return response
+    if payload.get("status") == "INSUFFICIENT_EVIDENCE":
+        log_query(q,payload["route"],payload.get("model_used"),False,payload.get("validation_score",0),payload.get("status"),verdict=payload.get("verdict"),answer=payload.get("answer"),response_payload=payload)
+        return QueryResponse(answer=payload["answer"],verdict=payload["verdict"],route=payload["route"],model_used=payload.get("model_used"),dataset_hit=False,validation_score=payload.get("validation_score",0),validation_status=payload.get("validation_status","INSUFFICIENT_EVIDENCE"),validation_reason=payload.get("validation_reason"),explanation=payload.get("explanation"),sources=[])
+    log_query(q,payload["route"],payload.get("model_used"),False,payload.get("validation_score"),payload.get("status"),verdict=payload.get("verdict"),answer=payload.get("answer"),response_payload=payload)
+    evidence=[e for e in payload.get("evidence",[]) if isinstance(e,dict) and e.get("url")]
+    return QueryResponse(answer=payload["answer"],verdict=payload["verdict"],route=payload["route"],model_used=payload.get("model_used"),dataset_hit=False,validation_score=payload.get("validation_score"),validation_status=payload.get("validation_status") or payload.get("status"),validation_reason=payload.get("validation_reason"),validation_components=payload.get("validation_components",{}),explanation=payload.get("explanation"),evidence=evidence,sources=[SourceResponse(title=s["title"],url=s["url"],published_date=s.get("published_date")) for s in payload.get("sources",[]) if s.get("url")])
+
+@app.get("/report", response_model=QueryReportResponse)
+async def report(limit:int=20):
+    rows=list_logs(max(1,min(int(limit),1000)))
+    for row in rows:
+        payload=row.get("response_json") or {}
+        if (not payload.get("answer") and not row.get("answer")) or (not payload.get("response") and row.get("query")):
+            try:
+                refreshed = await _generate_query_payload(row.get("query") or "")
+                update_query_response(row["id"], row.get("query") or "", refreshed.get("route") or row.get("route"), refreshed.get("model_used") or row.get("model_used"), refreshed.get("dataset_hit", bool(row.get("dataset_hit"))), refreshed.get("validation_score", row.get("validation_score")), refreshed.get("status") or row.get("status"), verdict=refreshed.get("verdict"), answer=refreshed.get("answer"), response_payload=refreshed)
+            except Exception:
+                pass
+    return generate_query_report(limit)
 
 @app.get("/dataset")
 def dataset():return list_claims()

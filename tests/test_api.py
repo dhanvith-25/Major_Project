@@ -55,3 +55,59 @@ def test_training_reads_csv_dataset(tmp_path):
     assert result["status"] == "trained"
     assert result["examples"] == 3
     assert model_path.exists()
+
+
+def test_query_report_summary_includes_history():
+    from app.db import log_query
+
+    log_query(
+        "Vaccines prevent severe disease",
+        "verified_dataset",
+        "demo-model",
+        True,
+        0.91,
+        "VERIFIED",
+        verdict="SUPPORTED",
+        answer="Vaccines reduce severe illness in many populations.",
+        response_payload={
+            "query": "Vaccines prevent severe disease",
+            "answer": "Vaccines reduce severe illness in many populations.",
+            "verdict": "SUPPORTED",
+            "status": "VERIFIED",
+            "validation_score": 0.91,
+            "route": "verified_dataset",
+            "model_used": "demo-model",
+            "created_at": "2026-09-21T10:00:00+00:00",
+        },
+    )
+    log_query(
+        "Antibiotics treat the common cold",
+        "llm_fallback",
+        "demo-model",
+        False,
+        0.0,
+        "INSUFFICIENT_EVIDENCE",
+        verdict="UNCERTAIN",
+        answer="Antibiotics are not recommended for a viral cold.",
+        response_payload={
+            "query": "Antibiotics treat the common cold",
+            "answer": "Antibiotics are not recommended for a viral cold.",
+            "verdict": "UNCERTAIN",
+            "status": "INSUFFICIENT_EVIDENCE",
+            "validation_score": 0.0,
+            "route": "llm_fallback",
+            "model_used": "demo-model",
+            "created_at": "2026-09-21T11:00:00+00:00",
+        },
+    )
+
+    response = client.get("/report")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total_queries"] >= 2
+    assert body["summary"]["SUPPORTED"] >= 1
+    assert body["summary"]["UNCERTAIN"] >= 1
+    assert body["queries"][0]["query"]
+    assert body["queries"][0]["response"]["answer"]
+    assert body["queries"][0]["response"]["validation_score"] is not None
