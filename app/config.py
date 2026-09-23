@@ -11,6 +11,7 @@ class Settings:
     training_batch_size=int(os.getenv("TRAINING_BATCH_SIZE","100"))
     dataset_match_threshold=float(os.getenv("DATASET_MATCH_THRESHOLD","0.88"))
     tavily_api_key=os.getenv("TAVILY_API_KEY","").strip()
+    google_factcheck_api_key=os.getenv("GOOGLE_FACTCHECK_API_KEY","").strip()
     groq_key=os.getenv("GROQ_API_KEY","").strip()
     openrouter_key=os.getenv("OPENROUTER_API_KEY","").strip()
     cheap_model=os.getenv("CHEAP_MODEL","llama-3.1-8b-instant").strip()
@@ -28,6 +29,8 @@ class Settings:
     def premium_configured(self): return bool(self.openrouter_key and self.premium_model)
     @property
     def validator_configured(self): return bool(self.openrouter_key and self.validator_model)
+    @property
+    def factcheck_configured(self): return bool(self.google_factcheck_api_key)
 
 @lru_cache
 def settings(): return Settings()

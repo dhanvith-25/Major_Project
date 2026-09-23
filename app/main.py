@@ -232,14 +232,35 @@ async def _generate_query_payload(q: str, route_hint: str | None = None):
     ]
 
     if hit:
+        verified_sources = [
+            {
+                "title": "Verified source",
+                "url": x["url"],
+                "published_date": x.get("published_date"),
+                "source_type": "government" if "who" in str(x.get("url") or "").lower() or "cdc" in str(x.get("url") or "").lower() else "unknown",
+                "relationship": "SUPPORTS",
+                "relevance": 95,
+                "reason": "Matched a previously verified health claim in the project dataset.",
+            }
+            for x in hit["sources"]
+            if isinstance(x, dict) and x.get("url")
+        ]
+        dataset_validation = {
+            "verdict": hit["verdict"],
+            "canonical_claim": q,
+            "answer": hit["answer"],
+            "evidence": verified_sources,
+        }
+        dataset_score, dataset_status, dataset_reason, dataset_components = score(dataset_validation)
         return {
             "query": q,
             "answer": hit["answer"],
             "verdict": hit["verdict"],
             "status": "VERIFIED_DATASET",
-            "validation_score": hit["validation_score"],
-            "validation_status": "VERIFIED_DATASET",
-            "validation_reason": "Retrieved from Satarka verified dataset via FAISS semantic search.",
+            "validation_score": dataset_score,
+            "validation_status": dataset_status,
+            "validation_reason": dataset_reason,
+            "validation_components": dataset_components,
             "explanation": f"This claim semantically matches a previously verified claim in the project dataset with {hit['similarity']}% similarity.",
             "route": "verified_dataset",
             "model_used": "faiss_all-MiniLM-L6-v2",
