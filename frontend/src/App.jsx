@@ -15,6 +15,10 @@ export default function App() {
   const [webQuery, setWebQuery] = useState("");
   const [webResult, setWebResult] = useState(null);
   const [webLoading, setWebLoading] = useState(false);
+  const [symptomText, setSymptomText] = useState("");
+  const [symptomImage, setSymptomImage] = useState(null);
+  const [symptomResult, setSymptomResult] = useState(null);
+  const [symptomLoading, setSymptomLoading] = useState(false);
   const [report, setReport] = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -51,6 +55,25 @@ export default function App() {
     }
   }
 
+  async function checkSymptoms(event) {
+    event.preventDefault();
+    if (!symptomText.trim() && !symptomImage) return setError("Add symptoms or upload an image to analyze.");
+    setSymptomLoading(true); setError(""); setSymptomResult(null);
+    try {
+      const form = new FormData();
+      if (symptomText.trim()) form.append("symptoms", symptomText);
+      if (symptomImage) form.append("image", symptomImage);
+      const result = await fetch(`${API}/symptom-check`, { method: "POST", body: form });
+      const body = await result.json();
+      if (!result.ok) throw new Error(body.detail || "Symptom check failed");
+      setSymptomResult(body);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSymptomLoading(false);
+    }
+  }
+
   return <div className="shell">
     <header className="topbar"><div className="brand"><span className="brandMark">H</span><div><strong>Healthcare-Ai</strong><small>health intelligence</small></div></div><span className="prototype">RESEARCH PROTOTYPE</span></header>
     <main>
@@ -69,12 +92,29 @@ export default function App() {
         </div>
       </section>
       <section className="webPanel">
-        <div className="panelTitle"><span className="step">03</span><div><h2>Verify with live web sources</h2><p>The LLM searches the web, compares evidence, and returns cited sources.</p></div></div>
+        <div className="panelTitle"><span className="step">03</span><div><h2>Misinformation Detection</h2><p>The LLM searches the web, compares evidence, and returns cited sources.</p></div></div>
         <form className="webForm" onSubmit={verifyWithSources}><input value={webQuery} onChange={(event) => setWebQuery(event.target.value)} placeholder="Example: Do antibiotics cure the common cold?" /><button className="primary" type="submit" disabled={webLoading}>{webLoading ? "Searching sources…" : "Verify with sources"}<span>↗</span></button></form>
         {webResult && <div className="webResult"><div className={`verdict ${webResult.verdict}`}><span className="dot" />{webResult.verdict}</div><section className="detailBlock"><h3>Detailed answer</h3><p className="answer">{webResult.answer || "No answer was generated."}</p></section><div className="webMeta"><span>Validation score <strong>{webResult.validation_score ?? "—"}</strong></span><span>Validation status <strong>{webResult.validation_status || "—"}</strong></span></div><section className="detailBlock explanation"><h3>Why this verdict?</h3><p>{webResult.explanation || webResult.validation_reason || "The validator did not provide an explanation."}</p><p className="reason"><strong>Reason:</strong> {webResult.validation_reason || "Not provided."}</p></section>{webResult.evidence?.length > 0 && <section className="evidence"><h3>Supporting details</h3>{webResult.evidence.map((item, index) => <article className="evidenceItem" key={`${item.url}-${index}`}><div><b className={item.relationship}>{item.relationship}</b><span>{item.relevance ?? 0}% relevance</span></div><p>{item.reason || "This source was used by the validator."}</p></article>)}</section>}{webResult.sources?.length > 0 && <div className="sources"><h3>Supporting source links</h3>{webResult.sources.map((source, index) => <a href={source.url} target="_blank" rel="noreferrer" key={`${source.url}-${index}`}><strong>{source.title || source.url}</strong><small>{source.url}</small></a>)}</div>}</div>}
       </section>
+      <section className="webPanel symptomPanel">
+        <div className="panelTitle"><span className="step">04</span><div><h2>Symptom checker</h2><p>Upload an image or type symptoms and review the likely causes.</p></div></div>
+        <form className="symptomForm" onSubmit={checkSymptoms}>
+          <label htmlFor="symptomImage">Image upload</label>
+          <input id="symptomImage" type="file" accept="image/*" onChange={(event) => setSymptomImage(event.target.files?.[0] || null)} />
+          <label htmlFor="symptomText">Symptoms</label>
+          <textarea id="symptomText" value={symptomText} onChange={(event) => setSymptomText(event.target.value)} placeholder="Example: fever, cough, sore throat, body aches" />
+          <button className="primary" type="submit" disabled={symptomLoading}>{symptomLoading ? "Checking symptoms…" : "Analyze symptoms"}<span>✦</span></button>
+        </form>
+        {symptomResult && <div className="webResult">
+          <section className="detailBlock"><h3>Summary</h3><p className="answer">{symptomResult.summary}</p></section>
+          <div className="webMeta"><span>Detected symptoms <strong>{symptomResult.detected_symptoms?.length ?? 0}</strong></span><span>OCR status <strong>{symptomResult.ocr_status || "—"}</strong></span></div>
+          {symptomResult.ocr_text && <section className="detailBlock"><h3>OCR text</h3><p className="reason">{symptomResult.ocr_text}</p></section>}
+          {symptomResult.ocr_warning && <section className="detailBlock"><h3>OCR note</h3><p className="reason">{symptomResult.ocr_warning}</p></section>}
+          {symptomResult.suggested_causes?.length > 0 && <section className="detailBlock"><h3>Suggested causes</h3>{symptomResult.suggested_causes.map((item, index) => <div className="reportItem symptomCause" key={`${item.cause}-${index}`}><strong>{item.cause}</strong><small>{item.confidence} confidence</small><p>{item.matched_symptoms.join(", ") || "No symptoms matched"}</p></div>)}</section>}
+        </div>}
+      </section>
       <section className="webPanel">
-        <div className="panelTitle"><span className="step">04</span><div><h2>Request a query report</h2><p>Generate a summary of the recent verification queries and their verdicts.</p></div></div>
+        <div className="panelTitle"><span className="step">05</span><div><h2>Request a query report</h2><p>Generate a summary of the recent verification queries and their verdicts.</p></div></div>
         <button className="primary" onClick={fetchReport} disabled={reportLoading}>{reportLoading ? "Generating report…" : "Generate report"}<span>▣</span></button>
         {report && <div className="webResult reportBox">
           <div className="webMeta"><span>Total queries <strong>{report.total_queries}</strong></span><span>Generated <strong>{new Date(report.generated_at).toLocaleString()}</strong></span></div>

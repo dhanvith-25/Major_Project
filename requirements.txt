@@ -7,5 +7,6 @@ scikit-learn>=1.5,<2
 joblib>=1.3,<2
 python-multipart>=0.0.9,<1
 pydantic>=2.7,<3
-#$env:SATARKA_PORT="8001"python -m app.main
-#http://127.0.0.1:8001/
+sentence-transformers>=3.0,<4
+faiss-cpu>=1.8,<2
+numpy>=1.26,<3

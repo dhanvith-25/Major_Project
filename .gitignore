@@ -17,6 +17,8 @@ __pycache__/
 *.db
 *.sqlite3
 data/satarka.db
+data/faiss_index.bin
+data/faiss_metadata.pkl
 
 
 #models/

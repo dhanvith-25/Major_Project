@@ -20,9 +20,12 @@ def _evidence_summary(sources: list[dict[str, Any]]) -> str:
     return " ".join(chunks)
 
 
-def _derive_verdict_from_evidence(claim: str, sources: list[dict[str, Any]], model_verdict: str) -> tuple[str, float]:
+def _derive_verdict_from_evidence(claim: str, sources: list[dict[str, Any]], model_verdict: str, model_confidence: float) -> tuple[str, float]:
     text = (claim or "").lower()
     evidence_text = _evidence_summary(sources)
+
+    if model_verdict in {"SUPPORTED", "CONTRADICTED"} and model_confidence >= 70.0:
+        return model_verdict, float(model_confidence)
 
     positive_terms = [
         "good for health", "benefits of drinking water", "water is essential",
@@ -59,7 +62,11 @@ async def reason_about_claim(claim: str) -> dict[str, Any]:
     if model_result["verdict"] == "INVALID_STATEMENT":
         return model_result
 
-    sources = await search(text)
+    try:
+        sources = await search(text)
+    except Exception:
+        sources = []
+
     evidence_count = len(sources)
     model_verdict = model_result["verdict"]
     model_confidence = float(model_result.get("confidence", 0.0) or 0.0)
@@ -79,7 +86,7 @@ async def reason_about_claim(claim: str) -> dict[str, Any]:
             "evidence_sources": [],
         }
 
-    verdict, confidence = _derive_verdict_from_evidence(text, sources, model_verdict)
+    verdict, confidence = _derive_verdict_from_evidence(text, sources, model_verdict, model_confidence)
 
     if verdict == "SUPPORTED" and model_verdict == "CONTRADICTED":
         confidence = max(confidence, 88.0)

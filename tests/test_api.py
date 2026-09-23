@@ -111,3 +111,36 @@ def test_query_report_summary_includes_history():
     assert body["queries"][0]["query"]
     assert body["queries"][0]["response"]["answer"]
     assert body["queries"][0]["response"]["validation_score"] is not None
+
+
+def test_symptom_checker_supports_manual_symptoms():
+    response = client.post("/symptom-check", data={"symptoms": "fever, cough, sore throat"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["manual_symptoms"] == ["fever", "cough", "sore throat"]
+    assert body["summary"]
+    assert "suggested_causes" in body
+    assert isinstance(body["suggested_causes"], list)
+
+
+def test_symptom_checker_accepts_uploaded_image():
+    from io import BytesIO
+
+    from PIL import Image
+
+    image_buffer = BytesIO()
+    Image.new("RGB", (80, 60), "white").save(image_buffer, format="PNG")
+    image_buffer.seek(0)
+
+    response = client.post(
+        "/symptom-check",
+        files={"image": ("symptoms.png", image_buffer.getvalue(), "image/png")},
+        data={"symptoms": "fever, cough"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["manual_symptoms"] == ["fever", "cough"]
+    assert "ocr_status" in body
+    assert isinstance(body["suggested_causes"], list)
