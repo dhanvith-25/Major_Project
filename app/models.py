@@ -89,3 +89,33 @@ class TrainResponse(BaseModel):
     examples: int
     output_dir: Optional[str] = None
     message: str
+
+
+class ReviewStatusUpdate(BaseModel):
+    claim_id: int
+    status: str = Field(default="pending", pattern="^(approved|rejected|pending)$")
+    note: str = ""
+
+
+class TrainingMetrics(BaseModel):
+    rouge_l: Optional[float] = None
+    rouge_2: Optional[float] = None
+    bleu: Optional[float] = None
+    eval_loss: Optional[float] = None
+    final_model_dir: Optional[str] = None
+
+
+class AdminReviewClaim(BaseModel):
+    id: int
+    canonical_claim: str
+    answer: str
+    verdict: str
+    validation_score: float
+    review_status: str
+    review_note: str = ""
+    updated_at: Optional[str] = None
+
+
+class AdminReviewDashboard(BaseModel):
+    summary: dict[str, int] = Field(default_factory=dict)
+    claims: list[AdminReviewClaim] = Field(default_factory=list)

@@ -23,6 +23,14 @@ def normalize_verdict(verdict=None, status=None):
     }
     return mapping.get(raw, raw or "UNKNOWN")
 
+
+def normalize_review_status(status=None):
+    value = str(status or "pending").strip().lower()
+    if value not in {"pending", "approved", "rejected"}:
+        return "pending"
+    return value
+
+
 def connection():
     p=Path(settings().db_path); p.parent.mkdir(parents=True,exist_ok=True)
     c=sqlite3.connect(str(p)); c.row_factory=sqlite3.Row; return c
@@ -35,12 +43,18 @@ def init_db():
           id INTEGER PRIMARY KEY AUTOINCREMENT, canonical_claim TEXT NOT NULL,
           answer TEXT NOT NULL, verdict TEXT NOT NULL, validation_score REAL NOT NULL,
           source_count INTEGER NOT NULL DEFAULT 0, sources_json TEXT NOT NULL DEFAULT '[]',
-          model_used TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+          model_used TEXT, review_status TEXT NOT NULL DEFAULT 'pending',
+          review_note TEXT DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS idx_claims_updated ON verified_claims(updated_at);
+        CREATE TABLE IF NOT EXISTS claim_reviews(
+          id INTEGER PRIMARY KEY AUTOINCREMENT, claim_id INTEGER NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending', note TEXT DEFAULT '',
+          reviewed_by TEXT DEFAULT 'admin', created_at TEXT NOT NULL, reviewed_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS training_examples(
           id INTEGER PRIMARY KEY AUTOINCREMENT, claim_id INTEGER NOT NULL UNIQUE,
           prompt TEXT NOT NULL, completion TEXT NOT NULL, validation_score REAL NOT NULL,
-          created_at TEXT NOT NULL, trained INTEGER NOT NULL DEFAULT 0);
+          review_status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL,
+          trained INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS training_runs(
           id INTEGER PRIMARY KEY AUTOINCREMENT, base_model TEXT NOT NULL,
           output_dir TEXT NOT NULL, examples_count INTEGER NOT NULL,
@@ -59,6 +73,19 @@ def init_db():
             "response_json":"ALTER TABLE query_log ADD COLUMN response_json TEXT NOT NULL DEFAULT '{}'",
         }.items():
             if col_name not in existing_cols:
+                c.execute(ddl)
+        claim_cols={row[1] for row in c.execute("PRAGMA table_info(verified_claims)").fetchall()}
+        for col_name, ddl in {
+            "review_status":"ALTER TABLE verified_claims ADD COLUMN review_status TEXT NOT NULL DEFAULT 'pending'",
+            "review_note":"ALTER TABLE verified_claims ADD COLUMN review_note TEXT DEFAULT ''",
+        }.items():
+            if col_name not in claim_cols:
+                c.execute(ddl)
+        example_cols={row[1] for row in c.execute("PRAGMA table_info(training_examples)").fetchall()}
+        for col_name, ddl in {
+            "review_status":"ALTER TABLE training_examples ADD COLUMN review_status TEXT NOT NULL DEFAULT 'pending'",
+        }.items():
+            if col_name not in example_cols:
                 c.execute(ddl)
         c.commit()
     finally: c.close()
@@ -93,16 +120,24 @@ def log_query(q,route,model,hit,score,status,error=None,verdict=None,answer=None
 def upsert_claim(claim,answer,verdict,score,sources,model):
     c=connection()
     try:
-        r=c.execute("SELECT id FROM verified_claims WHERE lower(canonical_claim)=lower(?) LIMIT 1",(claim,)).fetchone()
+        r=c.execute("SELECT id, review_status FROM verified_claims WHERE lower(canonical_claim)=lower(?) LIMIT 1",(claim,)).fetchone()
+        review_status = "pending"
+        if r and r["review_status"]:
+            review_status = normalize_review_status(r["review_status"])
         if r:
             cid=int(r["id"])
-            c.execute("UPDATE verified_claims SET answer=?,verdict=?,validation_score=?,source_count=?,sources_json=?,model_used=?,updated_at=? WHERE id=?",
-                      (answer,verdict,score,len(sources),json.dumps(sources),model,now(),cid))
+            c.execute("UPDATE verified_claims SET answer=?,verdict=?,validation_score=?,source_count=?,sources_json=?,model_used=?,review_status=?,updated_at=? WHERE id=?",
+                      (answer,verdict,score,len(sources),json.dumps(sources),model,review_status,now(),cid))
         else:
-            cur=c.execute("INSERT INTO verified_claims(canonical_claim,answer,verdict,validation_score,source_count,sources_json,model_used,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                          (claim,answer,verdict,score,len(sources),json.dumps(sources),model,now(),now()))
+            cur=c.execute("INSERT INTO verified_claims(canonical_claim,answer,verdict,validation_score,source_count,sources_json,model_used,review_status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                          (claim,answer,verdict,score,len(sources),json.dumps(sources),model,review_status,now(),now()))
             cid=int(cur.lastrowid)
         c.commit()
+        if float(score) >= 95.0:
+            add_training_example(cid, claim, answer, score)
+            c.execute("UPDATE training_examples SET review_status='pending', trained=0 WHERE claim_id=?", (cid,))
+            c.execute("UPDATE verified_claims SET review_status='pending' WHERE id=?", (cid,))
+            c.commit()
         try:
             from app.dataset import refresh_index
             refresh_index()
@@ -111,16 +146,18 @@ def upsert_claim(claim,answer,verdict,score,sources,model):
         return cid
     finally: c.close()
 
+
 def add_training_example(cid,prompt,completion,score):
     c=connection()
     try:
-        c.execute("INSERT OR IGNORE INTO training_examples(claim_id,prompt,completion,validation_score,created_at) VALUES(?,?,?,?,?)",
-                  (cid,prompt,completion,score,now())); c.commit()
+        c.execute("INSERT OR IGNORE INTO training_examples(claim_id,prompt,completion,validation_score,review_status,created_at) VALUES(?,?,?,?,?,?)",
+                  (cid,prompt,completion,score,"pending",now())); c.commit()
     finally: c.close()
+
 
 def pending_training():
     c=connection()
-    try: return c.execute("SELECT * FROM training_examples WHERE trained=0 ORDER BY id").fetchall()
+    try: return c.execute("SELECT * FROM training_examples WHERE trained=0 AND review_status='approved' ORDER BY id").fetchall()
     finally: c.close()
 
 def mark_trained(ids):
@@ -135,8 +172,50 @@ def training_status():
     try:
         a=c.execute("SELECT COUNT(*) n FROM training_examples").fetchone()["n"]
         b=c.execute("SELECT COUNT(*) n FROM training_examples WHERE trained=0").fetchone()["n"]
-        return {"total_examples":int(a),"pending_examples":int(b)}
+        approved=c.execute("SELECT COUNT(*) n FROM training_examples WHERE review_status='approved'").fetchone()["n"]
+        pending=c.execute("SELECT COUNT(*) n FROM training_examples WHERE review_status='pending'").fetchone()["n"]
+        rejected=c.execute("SELECT COUNT(*) n FROM training_examples WHERE review_status='rejected'").fetchone()["n"]
+        return {"total_examples":int(a),"pending_examples":int(b),"approved_examples":int(approved),"pending_review":int(pending),"rejected_examples":int(rejected)}
     finally:c.close()
+
+
+def review_dashboard():
+    c=connection()
+    try:
+        rows=c.execute("SELECT * FROM verified_claims ORDER BY updated_at DESC").fetchall()
+        items=[]
+        for row in rows:
+            items.append({
+                "id": row["id"],
+                "canonical_claim": row["canonical_claim"],
+                "answer": row["answer"],
+                "verdict": row["verdict"],
+                "validation_score": row["validation_score"],
+                "review_status": normalize_review_status(row["review_status"]),
+                "review_note": row["review_note"] or "",
+                "updated_at": row["updated_at"],
+            })
+        summary={"total": len(items), "pending": sum(1 for x in items if x["review_status"]=="pending"), "approved": sum(1 for x in items if x["review_status"]=="approved"), "rejected": sum(1 for x in items if x["review_status"]=="rejected")}
+        return {"summary": summary, "claims": items}
+    finally:c.close()
+
+
+def set_claim_review_status(claim_id, status, note=""):
+    normalized = normalize_review_status(status)
+    c=connection()
+    try:
+        row=c.execute("SELECT * FROM verified_claims WHERE id=?", (int(claim_id),)).fetchone()
+        if not row:
+            return {"claim_id": int(claim_id), "status": "not_found", "review_status": normalized}
+        c.execute("UPDATE verified_claims SET review_status=?, review_note=?, updated_at=? WHERE id=?",
+                  (normalized, note, now(), int(claim_id)))
+        c.execute("INSERT INTO claim_reviews(claim_id,status,note,reviewed_by,created_at,reviewed_at) VALUES(?,?,?,?,?,?)",
+                  (int(claim_id), normalized, note, "admin", now(), now()))
+        c.execute("UPDATE training_examples SET review_status=?, trained=0 WHERE claim_id=?", (normalized, int(claim_id)))
+        c.commit()
+        return {"claim_id": int(claim_id), "status": "updated", "review_status": normalized}
+    finally:c.close()
+
 
 def list_claims():
     c=connection()

@@ -16,15 +16,19 @@ from app.db import (
     list_claims,
     list_logs,
     log_query,
+    review_dashboard,
+    set_claim_review_status,
     training_status,
     update_query_response,
     upsert_claim,
 )
 from app.models import (
+    AdminReviewDashboard,
     HealthPredictionRequest,
     QueryReportResponse,
     QueryRequest,
     QueryResponse,
+    ReviewStatusUpdate,
     SemanticMatchResponse,
     SemanticSearchRequest,
     SourceResponse,
@@ -609,8 +613,19 @@ def training():
             "base_model": settings().training_base_model,
             "batch_size": settings().training_batch_size,
             "threshold": settings().training_threshold,
+            "adapter_dir": settings().training_output_dir,
         },
     }
+
+
+@app.get("/admin/review-dashboard", response_model=AdminReviewDashboard)
+def admin_review_dashboard():
+    return review_dashboard()
+
+
+@app.post("/admin/review")
+def review_claim(payload: ReviewStatusUpdate):
+    return set_claim_review_status(payload.claim_id, payload.status, payload.note)
 
 
 @app.post("/training/run", response_model=TrainResponse)
