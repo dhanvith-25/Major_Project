@@ -1,6 +1,7 @@
 import csv
 import io
 import os
+from pathlib import Path
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -11,11 +12,16 @@ from app.config import settings
 from app.dataset import find_match, get_top_k_matches, refresh_index
 from app.db import (
     add_training_example,
+    answer_personal_records_question,
     generate_query_report,
+    create_personal_report,
+    get_personal_report,
     init_db,
     list_claims,
     list_logs,
+    list_personal_reports,
     log_query,
+    personal_reports_summary,
     review_dashboard,
     set_claim_review_status,
     training_status,
@@ -25,6 +31,7 @@ from app.db import (
 from app.models import (
     AdminReviewDashboard,
     HealthPredictionRequest,
+    PersonalRecordQuestion,
     QueryReportResponse,
     QueryRequest,
     QueryResponse,
@@ -45,6 +52,14 @@ from app.services.search import search
 from app.services.symptom_checker import symptom_checker
 from app.services.validator import score, validate
 from app.training.pipeline import train_if_ready
+from app.services.personal_records import (
+    ReportProcessingError,
+    classify_test_type,
+    extract_report_details,
+    extract_report_text,
+    store_report_file,
+    validate_report_upload,
+)
 
 
 @asynccontextmanager
@@ -199,6 +214,77 @@ async def health_upload(file: UploadFile):
         "summary": summary,
         "results": results,
     }
+
+
+@app.post("/personal-reports/upload")
+async def upload_personal_report(file: UploadFile = File(...)):
+    """Store a report locally, extract its text, then persist structured findings."""
+    raw = await file.read()
+    try:
+        suffix = validate_report_upload(file.filename, file.content_type, raw)
+        stored_path, original_filename = store_report_file(file.filename, raw, suffix)
+        try:
+            extracted_text, extraction_method = extract_report_text(stored_path, suffix)
+            test_type, confidence = classify_test_type(extracted_text)
+            details = extract_report_details(extracted_text, test_type)
+            saved = create_personal_report(
+                {
+                    "original_filename": original_filename,
+                    "stored_path": stored_path,
+                    "mime_type": file.content_type,
+                    "file_size": len(raw),
+                    "extracted_text": extracted_text,
+                    "extraction_method": extraction_method,
+                    "test_type": test_type,
+                    "test_type_confidence": confidence,
+                    "report_test_name": details["test_name"],
+                    "patient_name": details["patient_name"],
+                    "doctor_name": details["doctor_name"],
+                    "reported_date": details["reported_date"],
+                },
+                details["measurements"],
+            )
+        except Exception:
+            # Do not leave an inaccessible file behind when processing cannot finish.
+            Path(stored_path).unlink(missing_ok=True)
+            raise
+    except ReportProcessingError as exc:
+        status_code = 413 if len(raw) > settings().personal_report_max_bytes else 400
+        raise HTTPException(status_code, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(500, "The report could not be processed locally.") from exc
+    return {
+        **saved,
+        "message": "Report stored locally and structured measurements extracted.",
+    }
+
+
+@app.get("/personal-reports")
+def personal_reports(query: str = "", test_type: str = "", limit: int = 100):
+    return list_personal_reports(query=query, test_type=test_type, limit=limit)
+
+
+@app.get("/personal-reports/search")
+def search_personal_reports(q: str, limit: int = 100):
+    return list_personal_reports(query=q, limit=limit)
+
+
+@app.get("/personal-reports/summary")
+def personal_reports_trends(query: str = ""):
+    return personal_reports_summary(query=query)
+
+
+@app.post("/personal-reports/ask")
+def ask_about_personal_records(payload: PersonalRecordQuestion):
+    return answer_personal_records_question(payload.question)
+
+
+@app.get("/personal-reports/{report_id}")
+def personal_report_detail(report_id: int):
+    report = get_personal_report(report_id)
+    if not report:
+        raise HTTPException(404, "Personal report not found.")
+    return report
 
 
 async def _generate_query_payload(q: str, route_hint: str | None = None):

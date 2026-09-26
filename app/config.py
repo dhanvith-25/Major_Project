@@ -21,6 +21,8 @@ class Settings:
     training_base_model=os.getenv("TRAINING_BASE_MODEL","Qwen/Qwen2.5-0.5B-Instruct").strip()
     training_output_dir=os.getenv("TRAINING_OUTPUT_DIR","models/satarka_adapter").strip()
     training_enabled=os.getenv("TRAINING_ENABLED","false").lower()=="true"
+    personal_reports_dir=os.getenv("PERSONAL_REPORTS_DIR", "data/personal_reports").strip()
+    personal_report_max_bytes=int(os.getenv("PERSONAL_REPORT_MAX_BYTES", str(10 * 1024 * 1024)))
     @property
     def cheap_configured(self): return bool(self.groq_key and self.cheap_model)
     @property

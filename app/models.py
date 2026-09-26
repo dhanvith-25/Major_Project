@@ -10,6 +10,10 @@ class HealthPredictionRequest(BaseModel):
     claim: str = Field(..., min_length=2, max_length=5000)
 
 
+class PersonalRecordQuestion(BaseModel):
+    question: str = Field(..., min_length=2, max_length=1000)
+
+
 class SourceResponse(BaseModel):
     title: str
     url: str

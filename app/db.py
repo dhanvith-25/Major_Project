@@ -1,4 +1,4 @@
-import json, sqlite3
+import json, re, sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from app.config import settings
@@ -65,6 +65,25 @@ def init_db():
           model_used TEXT, dataset_hit INTEGER NOT NULL, validation_score REAL,
           status TEXT NOT NULL, error TEXT, verdict TEXT, answer TEXT,
           response_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS personal_reports(
+          id INTEGER PRIMARY KEY AUTOINCREMENT, original_filename TEXT NOT NULL,
+          stored_path TEXT NOT NULL, mime_type TEXT, file_size INTEGER NOT NULL,
+          extracted_text TEXT NOT NULL, extraction_method TEXT NOT NULL,
+          test_type TEXT NOT NULL, test_type_confidence REAL NOT NULL DEFAULT 0,
+          report_test_name TEXT, patient_name TEXT, doctor_name TEXT, reported_date TEXT,
+          created_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_personal_reports_type_date
+          ON personal_reports(test_type, reported_date DESC);
+        CREATE TABLE IF NOT EXISTS personal_measurements(
+          id INTEGER PRIMARY KEY AUTOINCREMENT, report_id INTEGER NOT NULL,
+          test_name TEXT NOT NULL, value_raw TEXT NOT NULL, value_num REAL,
+          unit TEXT, reference_low REAL, reference_high REAL, reference_range TEXT,
+          status TEXT NOT NULL DEFAULT 'unknown', created_at TEXT NOT NULL,
+          FOREIGN KEY(report_id) REFERENCES personal_reports(id) ON DELETE CASCADE);
+        CREATE INDEX IF NOT EXISTS idx_personal_measurements_report
+          ON personal_measurements(report_id);
+        CREATE INDEX IF NOT EXISTS idx_personal_measurements_name
+          ON personal_measurements(test_name);
         """); c.commit()
         existing_cols={row[1] for row in c.execute("PRAGMA table_info(query_log)").fetchall()}
         for col_name, ddl in {
@@ -86,6 +105,12 @@ def init_db():
             "review_status":"ALTER TABLE training_examples ADD COLUMN review_status TEXT NOT NULL DEFAULT 'pending'",
         }.items():
             if col_name not in example_cols:
+                c.execute(ddl)
+        personal_report_cols={row[1] for row in c.execute("PRAGMA table_info(personal_reports)").fetchall()}
+        for col_name, ddl in {
+            "report_test_name":"ALTER TABLE personal_reports ADD COLUMN report_test_name TEXT",
+        }.items():
+            if col_name not in personal_report_cols:
                 c.execute(ddl)
         c.commit()
     finally: c.close()
@@ -236,6 +261,221 @@ def list_logs(limit):
     finally:c.close()
 
 
+def _personal_report_rows(c, where="", params=()):
+    rows = [dict(row) for row in c.execute(
+        "SELECT * FROM personal_reports " + where + " ORDER BY COALESCE(reported_date, created_at) DESC, id DESC",
+        params,
+    ).fetchall()]
+    if not rows:
+        return []
+    report_ids = [row["id"] for row in rows]
+    placeholders = ",".join("?" for _ in report_ids)
+    measurements = c.execute(
+        "SELECT * FROM personal_measurements WHERE report_id IN (" + placeholders + ") ORDER BY id",
+        report_ids,
+    ).fetchall()
+    by_report = {report_id: [] for report_id in report_ids}
+    for measurement in measurements:
+        by_report[measurement["report_id"]].append(dict(measurement))
+    for row in rows:
+        row["measurements"] = by_report[row["id"]]
+        # Original paths and the complete OCR/PDF text are persisted locally for
+        # search, but they are not needed by the browser response.
+        row.pop("stored_path", None)
+        row.pop("extracted_text", None)
+    return rows
+
+
+def create_personal_report(report, measurements):
+    """Persist a local report and all extracted measurements in one transaction."""
+    c = connection()
+    try:
+        created_at = now()
+        cur = c.execute(
+            """INSERT INTO personal_reports(
+                original_filename, stored_path, mime_type, file_size, extracted_text,
+                extraction_method, test_type, test_type_confidence, report_test_name, patient_name,
+                doctor_name, reported_date, created_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                report["original_filename"], report["stored_path"], report.get("mime_type"),
+                int(report["file_size"]), report["extracted_text"], report["extraction_method"],
+                report["test_type"], float(report.get("test_type_confidence", 0)), report.get("report_test_name"),
+                report.get("patient_name"), report.get("doctor_name"), report.get("reported_date"),
+                created_at,
+            ),
+        )
+        report_id = int(cur.lastrowid)
+        c.executemany(
+            """INSERT INTO personal_measurements(
+                report_id, test_name, value_raw, value_num, unit, reference_low,
+                reference_high, reference_range, status, created_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+            [
+                (
+                    report_id, item["test_name"], item["value_raw"], item.get("value_num"),
+                    item.get("unit"), item.get("reference_low"), item.get("reference_high"),
+                    item.get("reference_range"), item.get("status", "unknown"), created_at,
+                )
+                for item in measurements
+            ],
+        )
+        c.commit()
+        return _personal_report_rows(c, "WHERE id=?", (report_id,))[0]
+    finally:
+        c.close()
+
+
+def list_personal_reports(query="", test_type="", limit=100):
+    """List reports, optionally searching report metadata, OCR/PDF text, and test names."""
+    limit = max(1, min(int(limit), 500))
+    query = str(query or "").strip().lower()
+    test_type = str(test_type or "").strip()
+    filters, params = [], []
+    if query:
+        pattern = f"%{query}%"
+        filters.append(
+            """(
+                lower(original_filename) LIKE ? OR lower(test_type) LIKE ? OR
+                lower(COALESCE(patient_name,'')) LIKE ? OR lower(COALESCE(doctor_name,'')) LIKE ? OR
+                lower(extracted_text) LIKE ? OR id IN (
+                    SELECT report_id FROM personal_measurements WHERE lower(test_name) LIKE ?
+                )
+            )"""
+        )
+        params.extend([pattern] * 6)
+    if test_type:
+        filters.append("test_type = ?")
+        params.append(test_type)
+    where = "WHERE " + " AND ".join(filters) if filters else ""
+    c = connection()
+    try:
+        rows = _personal_report_rows(c, where, tuple(params))
+        return rows[:limit]
+    finally:
+        c.close()
+
+
+def get_personal_report(report_id):
+    c = connection()
+    try:
+        rows = _personal_report_rows(c, "WHERE id=?", (int(report_id),))
+        return rows[0] if rows else None
+    finally:
+        c.close()
+
+
+def personal_reports_summary(query=""):
+    """Build a date-aware trend view across all matching stored reports."""
+    reports = list_personal_reports(query=query, limit=500)
+    groups = {}
+    for report in reports:
+        effective_date = report.get("reported_date") or (report.get("created_at") or "")[:10]
+        for measurement in report.get("measurements", []):
+            key = (measurement["test_name"].strip().lower(), (measurement.get("unit") or "").lower())
+            group = groups.setdefault(
+                key,
+                {
+                    "test_name": measurement["test_name"],
+                    "unit": measurement.get("unit"),
+                    "records": [],
+                    "test_types": set(),
+                },
+            )
+            group["test_types"].add(report["test_type"])
+            group["records"].append(
+                {
+                    "report_id": report["id"], "reported_date": effective_date,
+                    "value_raw": measurement["value_raw"], "value_num": measurement.get("value_num"),
+                    "status": measurement.get("status", "unknown"),
+                    "reference_range": measurement.get("reference_range"),
+                    "filename": report["original_filename"],
+                }
+            )
+
+    metrics = []
+    for group in groups.values():
+        records = sorted(group["records"], key=lambda row: row["reported_date"] or "")
+        numeric = [row for row in records if row.get("value_num") is not None]
+        latest = records[-1]
+        first = numeric[0] if numeric else None
+        latest_numeric = numeric[-1] if numeric else None
+        change = None
+        direction = "insufficient data"
+        if first and latest_numeric and len(numeric) >= 2:
+            change = round(latest_numeric["value_num"] - first["value_num"], 4)
+            direction = "increased" if change > 0 else "decreased" if change < 0 else "unchanged"
+        elif latest_numeric:
+            direction = "single result"
+        metrics.append(
+            {
+                "test_name": group["test_name"], "unit": group["unit"],
+                "test_types": sorted(group["test_types"]), "latest": latest,
+                "highest": max(numeric, key=lambda row: row["value_num"]) if numeric else None,
+                "lowest": min(numeric, key=lambda row: row["value_num"]) if numeric else None,
+                "change": change, "direction": direction, "records": records,
+                "normal_count": sum(row["status"] == "normal" for row in records),
+                "high_count": sum(row["status"] == "high" for row in records),
+                "low_count": sum(row["status"] == "low" for row in records),
+            }
+        )
+    metrics.sort(key=lambda metric: metric["test_name"].lower())
+    return {
+        "total_reports": len(reports),
+        "total_measurements": sum(len(report["measurements"]) for report in reports),
+        "metrics": metrics,
+    }
+
+
+def answer_personal_records_question(question):
+    """Answer change questions deterministically from the user's saved measurements."""
+    summary = personal_reports_summary()
+    tokens = {
+        token for token in re.findall(r"[a-z0-9]+", str(question or "").lower())
+        if len(token) > 2 and token not in {
+            "what", "when", "where", "have", "with", "from", "that", "this", "your", "about",
+            "show", "tell", "give", "does", "changed", "change", "latest", "report", "reports",
+            "results", "result", "personal", "record", "records", "been", "much", "were", "which",
+        }
+    }
+    candidates = []
+    for metric in summary["metrics"]:
+        searchable = " ".join([metric["test_name"], *metric["test_types"]]).lower()
+        if not tokens or any(token in searchable for token in tokens):
+            candidates.append(metric)
+    candidates = candidates[:6]
+    if not candidates:
+        return {
+            "answer": "No matching measurement was found in your saved personal reports.",
+            "metrics": [], "total_reports": summary["total_reports"],
+        }
+
+    statements = []
+    for metric in candidates:
+        latest = metric["latest"]
+        unit = f" {metric['unit']}" if metric.get("unit") else ""
+        if metric["change"] is not None:
+            first = metric["records"][0]
+            delta = f"{abs(metric['change']):g}{unit}"
+            statements.append(
+                f"{metric['test_name']} {metric['direction']} by {delta}, from "
+                f"{first['value_raw']}{unit} on {first['reported_date']} to "
+                f"{latest['value_raw']}{unit} on {latest['reported_date']}"
+            )
+        else:
+            statements.append(
+                f"{metric['test_name']} has one recorded result: {latest['value_raw']}{unit} "
+                f"on {latest['reported_date']}"
+            )
+        if latest.get("status") in {"high", "low"}:
+            statements[-1] += f" (marked {latest['status']} against the report range)"
+        statements[-1] += "."
+    return {
+        "answer": " ".join(statements) + " This summarizes saved report values and is not medical advice.",
+        "metrics": candidates, "total_reports": summary["total_reports"],
+    }
+
+
 def update_query_response(log_id, q, route, model, hit, score, status, error=None, verdict=None, answer=None, response_payload=None):
     response_payload=response_payload or {}
     updated_at=now()
@@ -361,4 +601,3 @@ def generate_query_report(limit=20):
         queries.append(query_entry)
 
     return {"generated_at": now(), "total_queries": len(all_rows), "summary": dict(sorted(summary.items())), "queries": queries}
-

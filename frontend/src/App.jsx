@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:8081";
 
@@ -21,8 +21,21 @@ export default function App() {
   const [symptomLoading, setSymptomLoading] = useState(false);
   const [report, setReport] = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
+  const [personalReports, setPersonalReports] = useState([]);
+  const [selectedPersonalReport, setSelectedPersonalReport] = useState(null);
+  const [personalSummary, setPersonalSummary] = useState(null);
+  const [personalFile, setPersonalFile] = useState(null);
+  const [personalSearch, setPersonalSearch] = useState("");
+  const [personalQuestion, setPersonalQuestion] = useState("");
+  const [personalAnswer, setPersonalAnswer] = useState(null);
+  const [personalLoading, setPersonalLoading] = useState(false);
+  const [personalUploading, setPersonalUploading] = useState(false);
+  const [personalAsking, setPersonalAsking] = useState(false);
+  const [personalError, setPersonalError] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => { loadPersonalRecords(); }, []);
 
   async function predict(event) {
     event.preventDefault();
@@ -74,6 +87,72 @@ export default function App() {
     }
   }
 
+  async function loadPersonalRecords(searchTerm = "") {
+    setPersonalLoading(true);
+    setPersonalError("");
+    try {
+      const query = searchTerm.trim() ? `?query=${encodeURIComponent(searchTerm.trim())}` : "";
+      const [reports, summary] = await Promise.all([
+        api(`/personal-reports${query}`),
+        api(`/personal-reports/summary${query}`),
+      ]);
+      setPersonalReports(reports);
+      setPersonalSummary(summary);
+      setSelectedPersonalReport((current) => {
+        if (!reports.length) return null;
+        return reports.find((report) => report.id === current?.id) || reports[0];
+      });
+    } catch (err) {
+      setPersonalError(err.message);
+    } finally {
+      setPersonalLoading(false);
+    }
+  }
+
+  async function uploadPersonalReport(event) {
+    event.preventDefault();
+    if (!personalFile) return setPersonalError("Choose a PDF or image report first.");
+    setPersonalUploading(true);
+    setPersonalError("");
+    try {
+      const form = new FormData();
+      form.append("file", personalFile);
+      const saved = await api("/personal-reports/upload", { method: "POST", body: form });
+      setPersonalFile(null);
+      setSelectedPersonalReport(saved);
+      await loadPersonalRecords(personalSearch);
+    } catch (err) {
+      setPersonalError(err.message);
+    } finally {
+      setPersonalUploading(false);
+    }
+  }
+
+  async function askAboutPersonalRecords(event) {
+    event.preventDefault();
+    if (personalQuestion.trim().length < 2) return setPersonalError("Ask a question about a saved test or result.");
+    setPersonalAsking(true);
+    setPersonalError("");
+    try {
+      setPersonalAnswer(await api("/personal-reports/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: personalQuestion }),
+      }));
+    } catch (err) {
+      setPersonalError(err.message);
+    } finally {
+      setPersonalAsking(false);
+    }
+  }
+
+  const reportGroups = personalReports.reduce((groups, report) => {
+    const type = report.test_type || "Other reports";
+    groups[type] = groups[type] || [];
+    groups[type].push(report);
+    return groups;
+  }, {});
+
   return <div className="shell">
     <header className="topbar"><div className="brand"><span className="brandMark">H</span><div><strong>Healthcare-Ai</strong><small>health intelligence</small></div></div><span className="prototype">RESEARCH PROTOTYPE</span></header>
     <main>
@@ -113,8 +192,35 @@ export default function App() {
           {symptomResult.suggested_causes?.length > 0 && <section className="detailBlock"><h3>Suggested causes</h3>{symptomResult.suggested_causes.map((item, index) => <div className="reportItem symptomCause" key={`${item.cause}-${index}`}><strong>{item.cause}</strong><small>{item.confidence} confidence</small><p>{item.matched_symptoms.join(", ") || "No symptoms matched"}</p></div>)}</section>}
         </div>}
       </section>
+      <section className="personalPanel" id="personal-records">
+        <div className="panelTitle"><span className="step">05</span><div><h2>Personal health records</h2><p>Keep laboratory reports on this device, review extracted values, and compare changes over time.</p></div></div>
+        <div className="personalToolbar">
+          <form className="personalUpload" onSubmit={uploadPersonalReport}>
+            <label htmlFor="personalReport">Upload report <span>PDF, PNG, JPG, WEBP · up to 10 MB</span></label>
+            <div className="uploadControls"><input id="personalReport" type="file" accept="application/pdf,image/png,image/jpeg,image/webp" onChange={(event) => setPersonalFile(event.target.files?.[0] || null)} /><button className="primary compact" type="submit" disabled={personalUploading}>{personalUploading ? "Extracting…" : "Add personal report"}<span>↑</span></button></div>
+          </form>
+          <form className="personalSearch" onSubmit={(event) => { event.preventDefault(); loadPersonalRecords(personalSearch); }}><label htmlFor="personalSearch">Search reports</label><div className="searchControls"><input id="personalSearch" value={personalSearch} onChange={(event) => setPersonalSearch(event.target.value)} placeholder="Try sugar, Vitamin D, glucose…" /><button type="submit">Search</button></div></form>
+        </div>
+        {personalError && <p className="error">{personalError}</p>}
+        <div className="personalLayout">
+          <aside className="reportSidebar" aria-label="Personal reports by test type">
+            <div className="sidebarHeader"><strong>Your reports</strong><span>{personalReports.length}</span></div>
+            {personalLoading ? <p className="sidebarEmpty">Loading your local records…</p> : Object.keys(reportGroups).length === 0 ? <p className="sidebarEmpty">No reports yet. Upload a laboratory report to build your personal timeline.</p> : Object.entries(reportGroups).map(([type, reports]) => <section className="reportGroup" key={type}><h3>{type}<small>{reports.length}</small></h3>{reports.map((report) => <button key={report.id} className={`reportSelect ${selectedPersonalReport?.id === report.id ? "selected" : ""}`} onClick={() => setSelectedPersonalReport(report)}><strong>{report.reported_date || "Undated report"}</strong><span>{report.original_filename}</span><small>{report.measurements?.length || 0} extracted values</small></button>)}</section>)}
+          </aside>
+          <div className="personalContent">
+            {!selectedPersonalReport ? <div className="personalEmpty"><div className="emptyIcon">▤</div><p>Choose a report to see its details.</p><small>Files and extracted data remain in local application storage.</small></div> : <>
+              <section className="reportDetails"><div className="reportDetailsTitle"><div><p className="eyebrow">{selectedPersonalReport.test_type}</p><h3>{selectedPersonalReport.report_test_name || selectedPersonalReport.original_filename}</h3></div><span className="localBadge">Stored locally</span></div><div className="recordMeta"><span>Patient <strong>{selectedPersonalReport.patient_name || "Not found"}</strong></span><span>Doctor <strong>{selectedPersonalReport.doctor_name || "Not found"}</strong></span><span>Report date <strong>{selectedPersonalReport.reported_date || "Not found"}</strong></span><span>Extraction <strong>{selectedPersonalReport.extraction_method === "tesseract_ocr" ? "Image OCR" : "PDF text"}</strong></span></div>
+                <h4>Extracted test details</h4>
+                {selectedPersonalReport.measurements?.length ? <div className="measurementTable"><div className="measurementHead"><span>Test</span><span>Value</span><span>Reference range</span><span>Status</span></div>{selectedPersonalReport.measurements.map((measurement) => <div className="measurementRow" key={measurement.id || `${measurement.test_name}-${measurement.value_raw}`}><strong>{measurement.test_name}</strong><span>{measurement.value_raw} {measurement.unit || ""}</span><span>{measurement.reference_range || "Not available"}</span><b className={`measureStatus ${measurement.status}`}>{measurement.status}</b></div>)}</div> : <p className="noMeasurements">No value rows could be reliably extracted. The original report is still saved locally.</p>}
+              </section>
+              <section className="trendSection"><div className="trendTitle"><div><p className="eyebrow">Combined view</p><h3>Trends across matching reports</h3></div><span>{personalSummary?.total_reports || 0} reports · {personalSummary?.total_measurements || 0} values</span></div>{personalSummary?.metrics?.length ? <div className="trendGrid">{personalSummary.metrics.slice(0, 8).map((metric) => <article className="trendCard" key={`${metric.test_name}-${metric.unit || ""}`}><h4>{metric.test_name}</h4><p className={`trendDirection ${metric.direction.replaceAll(" ", "-")}`}>{metric.direction}</p><strong>{metric.latest?.value_raw} {metric.unit || ""}</strong><small>Latest · {metric.latest?.reported_date || "date unavailable"}</small><div><span>Lowest {metric.lowest?.value_raw ?? "—"}</span><span>Highest {metric.highest?.value_raw ?? "—"}</span></div>{metric.latest?.status !== "unknown" && <b className={`measureStatus ${metric.latest.status}`}>{metric.latest.status}</b>}</article>)}</div> : <p className="noMeasurements">Upload reports with numeric test results to generate a trend summary.</p>}</section>
+              <section className="askRecords"><div><p className="eyebrow">Change explorer</p><h3>What changed in my tests?</h3><p>Ask a factual question such as “How has my blood sugar changed?”</p></div><form onSubmit={askAboutPersonalRecords}><input value={personalQuestion} onChange={(event) => setPersonalQuestion(event.target.value)} placeholder="Ask about a saved result…" /><button className="primary compact" type="submit" disabled={personalAsking}>{personalAsking ? "Comparing…" : "Show changes"}<span>→</span></button></form>{personalAnswer && <div className="recordAnswer"><strong>Local record summary</strong><p>{personalAnswer.answer}</p></div>}</section>
+            </>}
+          </div>
+        </div>
+      </section>
       <section className="webPanel">
-        <div className="panelTitle"><span className="step">05</span><div><h2>Request a query report</h2><p>Generate a summary of the recent verification queries and their verdicts.</p></div></div>
+        <div className="panelTitle"><span className="step">06</span><div><h2>Request a query report</h2><p>Generate a summary of the recent verification queries and their verdicts.</p></div></div>
         <button className="primary" onClick={fetchReport} disabled={reportLoading}>{reportLoading ? "Generating report…" : "Generate report"}<span>▣</span></button>
         {report && <div className="webResult reportBox">
           <div className="webMeta"><span>Total queries <strong>{report.total_queries}</strong></span><span>Generated <strong>{new Date(report.generated_at).toLocaleString()}</strong></span></div>

@@ -20,6 +20,7 @@ __pycache__/
 data/satarka.db
 data/faiss_index.bin
 data/faiss_metadata.pkl
+data/personal_reports/
 
 
 #models/
