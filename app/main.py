@@ -3,6 +3,7 @@ import io
 import os
 from pathlib import Path
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -470,7 +471,8 @@ async def _generate_query_payload(q: str, route_hint: str | None = None):
 @app.post("/symptom-check")
 async def symptom_check_endpoint(
     image: UploadFile | None = File(default=None), symptoms: str = Form(default="")
-):
+) -> dict[str, Any]:
+    """Return a symptom assessment with cause, prevention, risk, and disclaimer."""
     if image is None:
         return symptom_checker(None, symptoms)
 

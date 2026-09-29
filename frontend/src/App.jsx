@@ -185,7 +185,7 @@ export default function App() {
           <button className="primary" type="submit" disabled={symptomLoading}>{symptomLoading ? "Checking symptoms…" : "Analyze symptoms"}<span>✦</span></button>
         </form>
         {symptomResult && <div className="webResult">
-          <section className="detailBlock"><h3>Summary</h3><p className="answer">{symptomResult.summary}</p></section>
+          <section className="detailBlock"><h3>Assessment</h3><p className="answer"><strong>Possible cause:</strong> {symptomResult.cause}</p><p><strong>Risk level:</strong> {symptomResult.risk_level}</p><p><strong>Prevention:</strong> {symptomResult.prevention}</p>{symptomResult.explanation && <p>{symptomResult.explanation}</p>}<p className="reason">{symptomResult.disclaimer}</p></section>
           <div className="webMeta"><span>Detected symptoms <strong>{symptomResult.detected_symptoms?.length ?? 0}</strong></span><span>OCR status <strong>{symptomResult.ocr_status || "—"}</strong></span></div>
           {symptomResult.ocr_text && <section className="detailBlock"><h3>OCR text</h3><p className="reason">{symptomResult.ocr_text}</p></section>}
           {symptomResult.ocr_warning && <section className="detailBlock"><h3>OCR note</h3><p className="reason">{symptomResult.ocr_warning}</p></section>}

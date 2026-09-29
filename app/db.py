@@ -84,6 +84,13 @@ def init_db():
           ON personal_measurements(report_id);
         CREATE INDEX IF NOT EXISTS idx_personal_measurements_name
           ON personal_measurements(test_name);
+                CREATE TABLE IF NOT EXISTS symptoms_db(
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symptom_name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    mapped_disease TEXT NOT NULL,
+                    risk_level TEXT NOT NULL CHECK(risk_level IN ('low', 'medium', 'high')),
+                    prevention_notes TEXT NOT NULL,
+                    explanation TEXT NOT NULL);
         """); c.commit()
         existing_cols={row[1] for row in c.execute("PRAGMA table_info(query_log)").fetchall()}
         for col_name, ddl in {
@@ -114,6 +121,53 @@ def init_db():
                 c.execute(ddl)
         c.commit()
     finally: c.close()
+
+
+def get_symptom_mapping(symptom_name: str) -> dict | None:
+    c = connection()
+    try:
+        row = c.execute(
+            "SELECT * FROM symptoms_db WHERE symptom_name = ? COLLATE NOCASE LIMIT 1",
+            (symptom_name.strip(),),
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        c.close()
+
+
+def save_symptom_mapping(
+    symptom_name: str,
+    mapped_disease: str,
+    risk_level: str,
+    prevention_notes: str,
+    explanation: str,
+) -> None:
+    normalized_risk = risk_level.strip().lower()
+    if normalized_risk not in {"low", "medium", "high"}:
+        raise ValueError("risk_level must be low, medium, or high")
+
+    c = connection()
+    try:
+        c.execute(
+            """INSERT INTO symptoms_db(
+                symptom_name, mapped_disease, risk_level, prevention_notes, explanation
+            ) VALUES(?,?,?,?,?)
+            ON CONFLICT(symptom_name) DO UPDATE SET
+                mapped_disease=excluded.mapped_disease,
+                risk_level=excluded.risk_level,
+                prevention_notes=excluded.prevention_notes,
+                explanation=excluded.explanation""",
+            (
+                symptom_name.strip(),
+                mapped_disease.strip(),
+                normalized_risk,
+                prevention_notes.strip(),
+                explanation.strip(),
+            ),
+        )
+        c.commit()
+    finally:
+        c.close()
 
 def log_query(q,route,model,hit,score,status,error=None,verdict=None,answer=None,response_payload=None):
     response_payload=response_payload or {}

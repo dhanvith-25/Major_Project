@@ -113,21 +113,92 @@ def test_query_report_summary_includes_history():
     assert body["queries"][0]["response"]["validation_score"] is not None
 
 
-def test_symptom_checker_supports_manual_symptoms():
+def test_symptom_checker_supports_manual_symptoms(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    import app.db as db
+    from app.services import symptom_checker as checker_module
+
+    monkeypatch.setattr(db, "settings", lambda: SimpleNamespace(db_path=str(tmp_path / "symptoms.db")))
+    db.init_db()
+    monkeypatch.setattr(
+        checker_module,
+        "_predict_disease",
+        lambda text: {
+            "cause": "Influenza",
+            "risk_level": "medium",
+            "prevention": "Rest and drink fluids.",
+            "explanation": "A viral respiratory illness.",
+            "confidence": 0.8,
+        },
+    )
+
     response = client.post("/symptom-check", data={"symptoms": "fever, cough, sore throat"})
 
     assert response.status_code == 200
     body = response.json()
+    assert body["cause"] == "Influenza"
+    assert body["prevention"] == "Rest and drink fluids."
+    assert body["risk_level"] == "medium"
+    assert body["disclaimer"] == "This is not a medical diagnosis. Please consult a doctor. Results may be inaccurate."
     assert body["manual_symptoms"] == ["fever", "cough", "sore throat"]
     assert body["summary"]
     assert "suggested_causes" in body
     assert isinstance(body["suggested_causes"], list)
+    assert db.get_symptom_mapping("cough, fever, sore throat")["mapped_disease"] == "Influenza"
 
 
-def test_symptom_checker_accepts_uploaded_image():
+def test_symptom_database_hit_skips_model(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    import app.db as db
+    from app.services import symptom_checker as checker_module
+
+    monkeypatch.setattr(db, "settings", lambda: SimpleNamespace(db_path=str(tmp_path / "symptoms.db")))
+    db.init_db()
+    db.save_symptom_mapping(
+        "cough, fever",
+        "Known respiratory illness",
+        "high",
+        "Seek clinical advice.",
+        "Stored explanation.",
+    )
+    monkeypatch.setattr(
+        checker_module,
+        "_predict_disease",
+        lambda text: pytest.fail("model should not run for a database hit"),
+    )
+
+    result = checker_module.symptom_checker(symptoms="fever, cough")
+
+    assert result["cause"] == "Known respiratory illness"
+    assert result["risk_level"] == "high"
+    assert result["prevention"] == "Seek clinical advice."
+    assert result["disclaimer"]
+
+
+def test_symptom_checker_accepts_uploaded_image(tmp_path, monkeypatch):
     from io import BytesIO
+    from types import SimpleNamespace
 
     from PIL import Image
+
+    import app.db as db
+    from app.services import symptom_checker as checker_module
+
+    monkeypatch.setattr(db, "settings", lambda: SimpleNamespace(db_path=str(tmp_path / "symptoms.db")))
+    db.init_db()
+    monkeypatch.setattr(
+        checker_module,
+        "_predict_disease",
+        lambda text: {
+            "cause": "Influenza",
+            "risk_level": "medium",
+            "prevention": "Rest and drink fluids.",
+            "explanation": "A viral respiratory illness.",
+            "confidence": 0.8,
+        },
+    )
 
     image_buffer = BytesIO()
     Image.new("RGB", (80, 60), "white").save(image_buffer, format="PNG")
