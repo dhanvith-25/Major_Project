@@ -1,6 +1,8 @@
+import csv
 import io
 import re
 from functools import lru_cache
+from pathlib import Path
 from typing import Any, Iterable
 
 from app.db import get_symptom_mapping, save_symptom_mapping
@@ -57,35 +59,22 @@ DISEASE_PROFILES: dict[str, dict[str, str]] = {
     },
 }
 
-CLASSIFIER_EXAMPLES: list[tuple[str, str]] = [
-    ("runny nose cough sneezing mild sore throat", "Common cold"),
-    ("nasal congestion sneezing and a mild cough", "Common cold"),
-    ("sore throat runny nose and fatigue", "Common cold"),
-    ("fever chills body aches cough and fatigue", "Influenza"),
-    ("sudden fever headache muscle aches and cough", "Influenza"),
-    ("high temperature chills weakness and dry cough", "Influenza"),
-    ("fever sore throat painful swallowing swollen glands", "Strep throat"),
-    ("pain when swallowing and sore throat without cough", "Strep throat"),
-    ("swollen neck glands fever and throat pain", "Strep throat"),
-    ("sneezing itchy eyes watery eyes and runny nose", "Allergic rhinitis"),
-    ("itchy nose repeated sneezing and watery eyes", "Allergic rhinitis"),
-    ("seasonal nasal congestion and eye itching", "Allergic rhinitis"),
-    ("wheezing shortness of breath chest tightness and cough", "Asthma"),
-    ("chest tightness wheezing and difficulty breathing", "Asthma"),
-    ("breathlessness with wheezing and recurring cough", "Asthma"),
-    ("thirst dry mouth dizziness and dark urine", "Dehydration"),
-    ("dizziness weakness and reduced urination", "Dehydration"),
-    ("thirst fatigue and dry mouth after fluid loss", "Dehydration"),
-    ("nausea vomiting diarrhea and stomach cramps", "Gastroenteritis"),
-    ("diarrhea abdominal pain and vomiting", "Gastroenteritis"),
-    ("stomach cramps nausea and loose stools", "Gastroenteritis"),
-    ("throbbing headache nausea and light sensitivity", "Migraine"),
-    ("recurring headache with sensitivity to sound", "Migraine"),
-    ("severe headache nausea and visual sensitivity", "Migraine"),
-    ("facial pressure nasal congestion and headache", "Sinusitis"),
-    ("sinus pressure blocked nose and facial pain", "Sinusitis"),
-    ("nasal congestion headache and pressure around the face", "Sinusitis"),
-]
+SYMPTOM_DATASET = Path(__file__).resolve().parents[2] / "data" / "symptom_examples.csv"
+
+
+@lru_cache(maxsize=1)
+def _load_classifier_examples() -> tuple[tuple[str, str], ...]:
+    with SYMPTOM_DATASET.open(newline="", encoding="utf-8") as dataset_file:
+        rows = csv.DictReader(dataset_file)
+        examples = tuple(
+            (row["text"].strip(), row["label"].strip())
+            for row in rows
+            if row.get("text", "").strip() and row.get("label", "").strip()
+        )
+
+    if not examples:
+        raise ValueError(f"Symptom dataset is empty: {SYMPTOM_DATASET}")
+    return examples
 
 try:
     from PIL import Image
@@ -155,8 +144,9 @@ def _load_pubmedbert_classifier() -> tuple[Any, Any, Any, Any, Any]:
     model.to(device)
     model.eval()
 
-    example_texts = [text for text, _ in CLASSIFIER_EXAMPLES]
-    labels = [label for _, label in CLASSIFIER_EXAMPLES]
+    classifier_examples = _load_classifier_examples()
+    example_texts = [text for text, _ in classifier_examples]
+    labels = [label for _, label in classifier_examples]
     embeddings = _embed_texts(example_texts, tokenizer, model, torch, device)
     classifier = LogisticRegression(max_iter=1000, class_weight="balanced")
     classifier.fit(embeddings, labels)

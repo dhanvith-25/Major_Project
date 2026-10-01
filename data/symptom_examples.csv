@@ -1,0 +1,28 @@
+text,label
+"runny nose cough sneezing mild sore throat",Common cold
+"nasal congestion sneezing and a mild cough",Common cold
+"sore throat runny nose and fatigue",Common cold
+"fever chills body aches cough and fatigue",Influenza
+"sudden fever headache muscle aches and cough",Influenza
+"high temperature chills weakness and dry cough",Influenza
+"fever sore throat painful swallowing swollen glands",Strep throat
+"pain when swallowing and sore throat without cough",Strep throat
+"swollen neck glands fever and throat pain",Strep throat
+"sneezing itchy eyes watery eyes and runny nose",Allergic rhinitis
+"itchy nose repeated sneezing and watery eyes",Allergic rhinitis
+"seasonal nasal congestion and eye itching",Allergic rhinitis
+"wheezing shortness of breath chest tightness and cough",Asthma
+"chest tightness wheezing and difficulty breathing",Asthma
+"breathlessness with wheezing and recurring cough",Asthma
+"thirst dry mouth dizziness and dark urine",Dehydration
+"dizziness weakness and reduced urination",Dehydration
+"thirst fatigue and dry mouth after fluid loss",Dehydration
+"nausea vomiting diarrhea and stomach cramps",Gastroenteritis
+"diarrhea abdominal pain and vomiting",Gastroenteritis
+"stomach cramps nausea and loose stools",Gastroenteritis
+"throbbing headache nausea and light sensitivity",Migraine
+"recurring headache with sensitivity to sound",Migraine
+"severe headache nausea and visual sensitivity",Migraine
+"facial pressure nasal congestion and headache",Sinusitis
+"sinus pressure blocked nose and facial pain",Sinusitis
+"nasal congestion headache and pressure around the face",Sinusitis
