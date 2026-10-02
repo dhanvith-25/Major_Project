@@ -30,6 +30,7 @@ export default function App() {
   const [reportError, setReportError] = useState("");
   const [historyVisible, setHistoryVisible] = useState(true);
   const [personalReports, setPersonalReports] = useState([]);
+  const [personalRecordsVisible, setPersonalRecordsVisible] = useState(true);
   const [selectedPersonalReport, setSelectedPersonalReport] = useState(null);
   const [personalSummary, setPersonalSummary] = useState(null);
   const [personalFile, setPersonalFile] = useState(null);
@@ -225,7 +226,8 @@ export default function App() {
         </div>}
       </section>
       <section className="personalPanel" id="personal-records">
-        <div className="panelTitle"><span className="step">05</span><div><h2>Personal health records</h2><p>Keep laboratory reports on this device, review extracted values, and compare changes over time.</p></div></div>
+        <div className="personalHeader"><div className="panelTitle"><span className="step">05</span><div><h2>Personal health records</h2><p>Keep laboratory reports on this device, review extracted values, and compare changes over time.</p></div></div><button className="historyToggle personalToggle" type="button" aria-expanded={personalRecordsVisible} onClick={() => setPersonalRecordsVisible((visible) => !visible)}>{personalRecordsVisible ? "Hide reports" : "Show reports"}</button></div>
+        {personalRecordsVisible && <>
         <div className="personalToolbar">
           <form className="personalUpload" onSubmit={uploadPersonalReport}>
             <label htmlFor="personalReport">Upload report <span>PDF, PNG, JPG, WEBP · up to 10 MB</span></label>
@@ -250,6 +252,7 @@ export default function App() {
             </>}
           </div>
         </div>
+        </>}
       </section>
       <section className="webPanel">
         <div className="panelTitle"><span className="step">06</span><div><h2>Query history</h2><p>Review verification queries, results, and verdicts from this device.</p></div></div>
