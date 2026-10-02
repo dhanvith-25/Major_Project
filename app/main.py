@@ -678,26 +678,6 @@ def refresh_dataset_index():
 
 @app.get("/report", response_model=QueryReportResponse)
 async def report(limit: int = 20):
-    rows = list_logs(max(1, min(int(limit), 1000)))
-    for row in rows:
-        payload = row.get("response_json") or {}
-        if not payload.get("answer") and not row.get("answer"):
-            try:
-                refreshed = await _generate_query_payload(row.get("query") or "")
-                update_query_response(
-                    row["id"],
-                    row.get("query") or "",
-                    refreshed.get("route") or row.get("route"),
-                    refreshed.get("model_used") or row.get("model_used"),
-                    refreshed.get("dataset_hit", bool(row.get("dataset_hit"))),
-                    refreshed.get("validation_score", row.get("validation_score")),
-                    refreshed.get("status") or row.get("status"),
-                    verdict=refreshed.get("verdict"),
-                    answer=refreshed.get("answer"),
-                    response_payload=refreshed,
-                )
-            except Exception:
-                pass
     return generate_query_report(limit)
 
 

@@ -113,6 +113,43 @@ def test_query_report_summary_includes_history():
     assert body["queries"][0]["response"]["validation_score"] is not None
 
 
+def test_query_report_does_not_regenerate_legacy_history(monkeypatch):
+    import app.db as db_module
+    import app.main as main_module
+
+    created_at = "2026-09-21T10:00:00+00:00"
+    legacy_row = {
+        "id": 1,
+        "query": "A legacy query without an answer",
+        "route": "llm_fallback",
+        "model_used": "demo-model",
+        "dataset_hit": 0,
+        "validation_score": None,
+        "status": "ERROR",
+        "error": None,
+        "verdict": "UNCERTAIN",
+        "answer": "",
+        "response_json": {},
+        "created_at": created_at,
+    }
+    generated_queries = []
+
+    async def generate_query_payload(query):
+        generated_queries.append(query)
+        return {"answer": "new answer"}
+
+    monkeypatch.setattr(db_module, "list_logs", lambda limit: [legacy_row])
+    monkeypatch.setattr(main_module, "_generate_query_payload", generate_query_payload)
+    monkeypatch.setattr(main_module, "update_query_response", lambda *args, **kwargs: None)
+
+    response = client.get("/report")
+
+    assert response.status_code == 200
+    assert response.json()["queries"][0]["created_at"] == created_at
+    assert response.json()["queries"][0]["answer"] == ""
+    assert generated_queries == []
+
+
 def test_symptom_checker_supports_manual_symptoms(tmp_path, monkeypatch):
     from types import SimpleNamespace
 

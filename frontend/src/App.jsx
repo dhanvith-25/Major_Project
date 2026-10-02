@@ -9,6 +9,12 @@ async function api(path, options) {
   return body;
 }
 
+function formatReportDate(value) {
+  if (!value) return "Date unavailable";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
 export default function App() {
   const [claim, setClaim] = useState("");
   const [result, setResult] = useState(null);
@@ -21,6 +27,8 @@ export default function App() {
   const [symptomLoading, setSymptomLoading] = useState(false);
   const [report, setReport] = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState("");
+  const [historyVisible, setHistoryVisible] = useState(true);
   const [personalReports, setPersonalReports] = useState([]);
   const [selectedPersonalReport, setSelectedPersonalReport] = useState(null);
   const [personalSummary, setPersonalSummary] = useState(null);
@@ -36,7 +44,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => { loadPersonalRecords(); }, []);
+  useEffect(() => { loadPersonalRecords(); fetchReport(); }, []);
 
   async function predict(event) {
     event.preventDefault();
@@ -58,12 +66,12 @@ export default function App() {
 
   async function fetchReport() {
     setReportLoading(true);
-    setError("");
+    setReportError("");
     try {
-      const result = await api("/report?limit=10", { method: "GET" });
+      const result = await api("/report?limit=1000", { method: "GET" });
       setReport(result);
     } catch (err) {
-      setError(err.message);
+      setReportError(err.message);
     } finally {
       setReportLoading(false);
     }
@@ -173,7 +181,7 @@ export default function App() {
   return <div className="shell">
     <header className="topbar"><div className="brand"><span className="brandMark">H</span><div><strong>Healthcare-Ai</strong><small>health intelligence</small></div></div><span className="prototype">RESEARCH PROTOTYPE</span></header>
     <main>
-      <section className="hero"><p className="eyebrow">CLAIM VERIFICATION</p><h1>Is this health information<br /><em>supported by the model?</em></h1><p className="intro">Write one health claim and the classifier will return a prediction, confidence, and the full probability breakdown.</p></section>
+      <section className="hero"><p className="eyebrow">CLAIM VERIFICATION</p><h1>Health information<br /><em>that you need is here</em></h1><p className="intro">Write one health claim and the classifier will return a prediction, confidence, and the full probability breakdown.</p></section>
       <section className="workspace">
         <div className="panel inputPanel">
           <div className="panelTitle"><span className="step">01</span><div><h2>Choose or write a claim</h2><p>Start with a dataset example or enter text below.</p></div></div>
@@ -188,9 +196,16 @@ export default function App() {
         </div>
       </section>
       <section className="webPanel">
-        <div className="panelTitle"><span className="step">03</span><div><h2>Misinformation Detection</h2><p>The LLM searches the web, compares evidence, and returns cited sources.</p></div></div>
-        <form className="webForm" onSubmit={verifyWithSources}><input value={webQuery} onChange={(event) => setWebQuery(event.target.value)} placeholder="Example: Do antibiotics cure the common cold?" /><button className="primary" type="submit" disabled={webLoading}>{webLoading ? "Searching sources…" : "Verify with sources"}<span>↗</span></button></form>
-        {webResult && <div className="webResult"><div className={`verdict ${webResult.verdict}`}><span className="dot" />{webResult.verdict}</div><section className="detailBlock"><h3>Detailed answer</h3><p className="answer">{webResult.answer || "No answer was generated."}</p></section><div className="webMeta"><span>Validation score <strong>{webResult.validation_score ?? "—"}</strong></span><span>Validation status <strong>{webResult.validation_status || "—"}</strong></span></div><section className="detailBlock explanation"><h3>Why this verdict?</h3><p>{webResult.explanation || webResult.validation_reason || "The validator did not provide an explanation."}</p><p className="reason"><strong>Reason:</strong> {webResult.validation_reason || "Not provided."}</p></section>{webResult.evidence?.length > 0 && <section className="evidence"><h3>Supporting details</h3>{webResult.evidence.map((item, index) => <article className="evidenceItem" key={`${item.url}-${index}`}><div><b className={item.relationship}>{item.relationship}</b><span>{item.relevance ?? 0}% relevance</span></div><p>{item.reason || "This source was used by the validator."}</p></article>)}</section>}{webResult.sources?.length > 0 && <div className="sources"><h3>Supporting source links</h3>{webResult.sources.map((source, index) => <a href={source.url} target="_blank" rel="noreferrer" key={`${source.url}-${index}`}><strong>{source.title || source.url}</strong><small>{source.url}</small></a>)}</div>}</div>}
+        <div className="panelTitle"><span className="step">03</span>
+        <div><h2>Misinformation Detection</h2>
+        <p>The LLM searches the web, compares evidence, and returns cited sources.</p></div>
+        </div>
+        <form className="webForm" onSubmit={verifyWithSources}><input value={webQuery} onChange={(event) => setWebQuery(event.target.value)} placeholder="Example: Do antibiotics cure the common cold?" />
+        <button className="primary" type="submit" disabled={webLoading}>{webLoading ? "Searching sources…" : "Verify with sources"}<span>↗</span></button></form>
+        {webResult && <div className="webResult"><div className={`verdict ${webResult.verdict}`}><span className="dot" />{webResult.verdict}</div>
+        <section className="detailBlock"><h3>Detailed answer</h3><p className="answer">{webResult.answer || "No answer was generated."}</p></section><div className="webMeta"><span>Validation score <strong>{webResult.validation_score ?? "—"}</strong></span>
+        <span>Validation status <strong>{webResult.validation_status || "—"}</strong></span></div>
+        <section className="detailBlock explanation"><h3>Why this verdict?</h3><p>{webResult.explanation || webResult.validation_reason || "The validator did not provide an explanation."}</p><p className="reason"><strong>Reason:</strong> {webResult.validation_reason || "Not provided."}</p></section>{webResult.evidence?.length > 0 && <section className="evidence"><h3>Supporting details</h3>{webResult.evidence.map((item, index) => <article className="evidenceItem" key={`${item.url}-${index}`}><div><b className={item.relationship}>{item.relationship}</b><span>{item.relevance ?? 0}% relevance</span></div><p>{item.reason || "This source was used by the validator."}</p></article>)}</section>}{webResult.sources?.length > 0 && <div className="sources"><h3>Supporting source links</h3>{webResult.sources.map((source, index) => <a href={source.url} target="_blank" rel="noreferrer" key={`${source.url}-${index}`}><strong>{source.title || source.url}</strong><small>{source.url}</small></a>)}</div>}</div>}
       </section>
       <section className="webPanel symptomPanel">
         <div className="panelTitle"><span className="step">04</span><div><h2>Symptom checker</h2><p>Upload an image or type symptoms and review the likely causes.</p></div></div>
@@ -237,12 +252,20 @@ export default function App() {
         </div>
       </section>
       <section className="webPanel">
-        <div className="panelTitle"><span className="step">06</span><div><h2>Request a query report</h2><p>Generate a summary of the recent verification queries and their verdicts.</p></div></div>
-        <button className="primary" onClick={fetchReport} disabled={reportLoading}>{reportLoading ? "Generating report…" : "Generate report"}<span>▣</span></button>
-        {report && <div className="webResult reportBox">
-          <div className="webMeta"><span>Total queries <strong>{report.total_queries}</strong></span><span>Generated <strong>{new Date(report.generated_at).toLocaleString()}</strong></span></div>
-          <section className="detailBlock"><h3>Verdict summary</h3><div className="summaryGrid">{Object.entries(report.summary || {}).map(([label, value]) => <div key={label} className="summaryItem"><strong>{label}</strong><span>{value}</span></div>)}</div></section>
-          <section className="detailBlock"><h3>Recent query history</h3>{report.queries?.slice(0, 5).map((item) => <div className="reportItem" key={item.id}><p><strong>{item.query}</strong></p><small>{item.verdict} · {item.route} · {item.status}</small><p>{item.answer || "No answer recorded."}</p></div>)}</section>
+        <div className="panelTitle"><span className="step">06</span><div><h2>Query history</h2><p>Review verification queries, results, and verdicts from this device.</p></div></div>
+        <button className="primary historyRefresh" onClick={fetchReport} disabled={reportLoading}>{reportLoading ? "Loading history…" : "Refresh history"}<span>↻</span></button>
+        {reportError && <p className="error" role="alert">{reportError}</p>}
+        {report && <div className="queryHistory">
+          <div className="historyOverview"><div><span>Queries recorded</span><strong>{report.total_queries}</strong></div><p>Updated {formatReportDate(report.generated_at)}</p></div>
+          <section className="historySummary"><h3>Verdict overview</h3><div className="historySummaryGrid">{Object.entries(report.summary || {}).map(([label, value]) => <div className={`historySummaryItem ${label}`} key={label}><span>{label.replaceAll("_", " ")}</span><strong>{value}</strong></div>)}</div></section>
+          <section className="historyList"><div className="historyListHeader"><h3>Verification history</h3><div className="historyListActions"><span>Latest {Math.min(7, report.queries?.length || 0)} of {report.queries?.length || 0}</span>{report.queries?.length > 0 && <button className="historyToggle" type="button" aria-expanded={historyVisible} onClick={() => setHistoryVisible((visible) => !visible)}>{historyVisible ? "Hide history" : "Show latest 7"}</button>}</div></div>
+            {report.queries?.length ? historyVisible && report.queries.slice(0, 7).map((item) => <article className="historyEntry" key={item.id}>
+              <div className="historyEntryTop"><span className={`historyVerdict ${item.verdict}`}>{(item.verdict || "UNKNOWN").replaceAll("_", " ")}</span><time>{formatReportDate(item.created_at || item.time)}</time></div>
+              <h4>{item.query || "Query text unavailable"}</h4>
+              <p className="historyAnswer">{item.answer || "No answer was recorded."}</p>
+              <div className="historyDetails"><span>Route <strong>{item.route || "—"}</strong></span><span>Status <strong>{item.status || "—"}</strong></span>{item.model_used && <span>Model <strong>{item.model_used}</strong></span>}{item.validation_score != null && <span>Validation score <strong>{item.validation_score}</strong></span>}</div>
+            </article>) : <p className="historyEmpty">No verification queries have been recorded yet.</p>}
+          </section>
         </div>}
       </section>
       <footer><span>---------</span><span>TF-IDF + Logistic Regression</span><span>Not medical advice</span></footer>
