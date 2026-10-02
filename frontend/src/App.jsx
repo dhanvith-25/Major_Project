@@ -30,6 +30,7 @@ export default function App() {
   const [personalAnswer, setPersonalAnswer] = useState(null);
   const [personalLoading, setPersonalLoading] = useState(false);
   const [personalUploading, setPersonalUploading] = useState(false);
+  const [personalDeleting, setPersonalDeleting] = useState(false);
   const [personalAsking, setPersonalAsking] = useState(false);
   const [personalError, setPersonalError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -128,6 +129,22 @@ export default function App() {
     }
   }
 
+  async function deletePersonalReport() {
+    if (!selectedPersonalReport || personalDeleting) return;
+    const confirmed = window.confirm(`Delete "${selectedPersonalReport.original_filename}" and its extracted details from this device?`);
+    if (!confirmed) return;
+    setPersonalDeleting(true);
+    setPersonalError("");
+    try {
+      await api(`/personal-reports/${selectedPersonalReport.id}`, { method: "DELETE" });
+      await loadPersonalRecords(personalSearch);
+    } catch (err) {
+      setPersonalError(err.message);
+    } finally {
+      setPersonalDeleting(false);
+    }
+  }
+
   async function askAboutPersonalRecords(event) {
     event.preventDefault();
     if (personalQuestion.trim().length < 2) return setPersonalError("Ask a question about a saved test or result.");
@@ -209,7 +226,7 @@ export default function App() {
           </aside>
           <div className="personalContent">
             {!selectedPersonalReport ? <div className="personalEmpty"><div className="emptyIcon">▤</div><p>Choose a report to see its details.</p><small>Files and extracted data remain in local application storage.</small></div> : <>
-              <section className="reportDetails"><div className="reportDetailsTitle"><div><p className="eyebrow">{selectedPersonalReport.test_type}</p><h3>{selectedPersonalReport.report_test_name || selectedPersonalReport.original_filename}</h3></div><span className="localBadge">Stored locally</span></div><div className="recordMeta"><span>Patient <strong>{selectedPersonalReport.patient_name || "Not found"}</strong></span><span>Doctor <strong>{selectedPersonalReport.doctor_name || "Not found"}</strong></span><span>Report date <strong>{selectedPersonalReport.reported_date || "Not found"}</strong></span><span>Extraction <strong>{selectedPersonalReport.extraction_method === "tesseract_ocr" ? "Image OCR" : "PDF text"}</strong></span></div>
+              <section className="reportDetails"><div className="reportDetailsTitle"><div><p className="eyebrow">{selectedPersonalReport.test_type}</p><h3>{selectedPersonalReport.report_test_name || selectedPersonalReport.original_filename}</h3></div><div className="reportActions"><span className="localBadge">Stored locally</span><button className="dangerButton" type="button" onClick={deletePersonalReport} disabled={personalDeleting}>{personalDeleting ? "Deleting…" : "Delete report"}</button></div></div><div className="recordMeta"><span>Patient <strong>{selectedPersonalReport.patient_name || "Not found"}</strong></span><span>Doctor <strong>{selectedPersonalReport.doctor_name || "Not found"}</strong></span><span>Report date <strong>{selectedPersonalReport.reported_date || "Not found"}</strong></span><span>Extraction <strong>{selectedPersonalReport.extraction_method === "tesseract_ocr" ? "Image OCR" : "PDF text"}</strong></span></div>
                 <h4>Extracted test details</h4>
                 {selectedPersonalReport.measurements?.length ? <div className="measurementTable"><div className="measurementHead"><span>Test</span><span>Value</span><span>Reference range</span><span>Status</span></div>{selectedPersonalReport.measurements.map((measurement) => <div className="measurementRow" key={measurement.id || `${measurement.test_name}-${measurement.value_raw}`}><strong>{measurement.test_name}</strong><span>{measurement.value_raw} {measurement.unit || ""}</span><span>{measurement.reference_range || "Not available"}</span><b className={`measureStatus ${measurement.status}`}>{measurement.status}</b></div>)}</div> : <p className="noMeasurements">No value rows could be reliably extracted. The original report is still saved locally.</p>}
               </section>

@@ -14,6 +14,7 @@ from app.dataset import find_match, get_top_k_matches, refresh_index
 from app.db import (
     add_training_example,
     answer_personal_records_question,
+    delete_personal_report,
     generate_query_report,
     create_personal_report,
     get_personal_report,
@@ -286,6 +287,24 @@ def personal_report_detail(report_id: int):
     if not report:
         raise HTTPException(404, "Personal report not found.")
     return report
+
+
+@app.delete("/personal-reports/{report_id}")
+def remove_personal_report(report_id: int):
+    stored_path = delete_personal_report(report_id)
+    if stored_path is None:
+        raise HTTPException(404, "Personal report not found.")
+
+    report_dir = Path(settings().personal_reports_dir).resolve()
+    report_path = Path(stored_path).resolve()
+    if report_path.parent == report_dir:
+        try:
+            report_path.unlink(missing_ok=True)
+        except OSError as exc:
+            raise HTTPException(
+                500, "Report details were deleted, but the original file could not be removed."
+            ) from exc
+    return {"id": report_id, "message": "Personal report and extracted details deleted."}
 
 
 async def _generate_query_payload(q: str, route_hint: str | None = None):

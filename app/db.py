@@ -419,6 +419,28 @@ def get_personal_report(report_id):
         c.close()
 
 
+def delete_personal_report(report_id):
+    """Delete a report and its extracted measurements in one transaction."""
+    c = connection()
+    try:
+        c.execute("BEGIN IMMEDIATE")
+        row = c.execute(
+            "SELECT stored_path FROM personal_reports WHERE id=?", (int(report_id),)
+        ).fetchone()
+        if not row:
+            c.rollback()
+            return None
+        c.execute("DELETE FROM personal_measurements WHERE report_id=?", (int(report_id),))
+        c.execute("DELETE FROM personal_reports WHERE id=?", (int(report_id),))
+        c.commit()
+        return str(row["stored_path"])
+    except Exception:
+        c.rollback()
+        raise
+    finally:
+        c.close()
+
+
 def personal_reports_summary(query=""):
     """Build a date-aware trend view across all matching stored reports."""
     reports = list_personal_reports(query=query, limit=500)
